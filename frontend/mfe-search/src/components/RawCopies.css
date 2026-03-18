@@ -1,0 +1,430 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Raw Copies — Search Panel & Results
+   Collection: amp_raw_copies
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Search panel ──────────────────────────────────────────────────────── */
+.rc-panel {
+    background: var(--surface, var(--white));
+    border: 1px solid var(--border, var(--gray-6));
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+}
+
+.rc-panel-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--gray-3);
+    cursor: pointer;
+    margin-bottom: 16px;
+    user-select: none;
+}
+
+.rc-panel-title-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.rc-mode-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.rc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px 16px;
+}
+
+.rc-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.rc-field label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--gray-3);
+}
+
+.rc-field input,
+.rc-field select {
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--gray-5);
+    border-radius: 7px;
+    font-size: 13px;
+    color: var(--black);
+    background: var(--white);
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.rc-field input:focus,
+.rc-field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.rc-field-wide {
+    grid-column: 1 / -1;
+}
+
+.rc-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.rc-toggle-row label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--gray-2);
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.rc-toggle-row input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+/* ── Stats bar ─────────────────────────────────────────────────────────── */
+.rc-stats-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.rc-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    background: var(--gray-7);
+    border: 1px solid var(--gray-6);
+    border-radius: 8px;
+    padding: 6px 14px;
+}
+
+.rc-stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--black);
+}
+
+.rc-stat-label {
+    font-size: 11px;
+    color: var(--gray-3);
+    font-weight: 500;
+}
+
+.rc-stat.rc-stat-dup .rc-stat-value { color: var(--danger, #e24b4a); }
+.rc-stat.rc-stat-ok  .rc-stat-value { color: var(--ok,     #22c55e); }
+
+/* ── Results table ─────────────────────────────────────────────────────── */
+.rc-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--gray-6);
+    border-radius: 10px;
+    margin-bottom: 12px;
+}
+
+.rc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    min-width: 900px;
+}
+
+.rc-table thead th {
+    background: var(--gray-7);
+    padding: 11px 14px;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--gray-3);
+    border-bottom: 2px solid var(--gray-5);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.rc-table tbody tr {
+    border-bottom: 1px solid var(--gray-6);
+    transition: background 0.1s;
+    cursor: pointer;
+}
+
+.rc-table tbody tr:hover { background: var(--gray-7); }
+.rc-table tbody tr:last-child { border-bottom: none; }
+
+.rc-table td {
+    padding: 11px 14px;
+    color: var(--black-3);
+    vertical-align: middle;
+}
+
+/* ── Group header row ──────────────────────────────────────────────────── */
+.rc-group-header {
+    background: linear-gradient(90deg, #eff6ff 0%, var(--white) 100%);
+    border-bottom: 2px solid #bfdbfe !important;
+}
+
+.rc-group-header td {
+    padding: 10px 14px;
+}
+
+.rc-group-ref {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.rc-group-ref-text {
+    font-family: var(--font-mono, monospace);
+    font-weight: 700;
+    font-size: 13px;
+    color: #1d4ed8;
+}
+
+.rc-group-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+
+/* ── Row detail expand ─────────────────────────────────────────────────── */
+.rc-expand-btn {
+    background: none;
+    border: 1px solid var(--gray-5);
+    border-radius: 6px;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--gray-3);
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.rc-expand-btn:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.rc-expand-btn.open {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    transform: rotate(90deg);
+}
+
+/* ── Expanded raw XML row ───────────────────────────────────────────────── */
+.rc-raw-row td {
+    padding: 0;
+    background: #0f172a;
+}
+
+.rc-raw-inner {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rc-raw-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+.rc-raw-xml {
+    font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: #e2e8f0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 320px;
+    overflow-y: auto;
+    background: transparent;
+    margin: 0;
+    padding: 0;
+}
+
+.rc-raw-xml::-webkit-scrollbar       { width: 5px; }
+.rc-raw-xml::-webkit-scrollbar-track { background: #1e293b; }
+.rc-raw-xml::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+
+/* ── Status & direction badges ──────────────────────────────────────────── */
+.rc-status {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.rc-status-ok       { background: #dcfce7; color: #166534; }
+.rc-status-pending  { background: #fef9c3; color: #854d0e; }
+.rc-status-fail     { background: #fee2e2; color: #991b1b; }
+.rc-status-default  { background: #f1f5f9; color: #475569; }
+
+.rc-dir {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.rc-dir-in  { background: #dbeafe; color: #1e40af; }
+.rc-dir-out { background: #fce7f3; color: #9d174d; }
+.rc-dir-rt  { background: #f3f4f6; color: #374151; }
+
+.rc-dup-yes { color: var(--danger, #e24b4a); font-weight: 700; font-size: 11px; }
+.rc-dup-no  { color: var(--ok,     #22c55e); font-weight: 500; font-size: 11px; }
+
+/* ── Mono cell ─────────────────────────────────────────────────────────── */
+.rc-mono {
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    color: var(--black-3);
+}
+
+/* ── Pagination ─────────────────────────────────────────────────────────── */
+.rc-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 4px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.rc-page-info {
+    font-size: 12px;
+    color: var(--gray-3);
+}
+
+.rc-page-btns {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.rc-pg-btn {
+    height: 30px;
+    min-width: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--gray-5);
+    border-radius: 6px;
+    background: var(--white);
+    color: var(--black-3);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.12s;
+}
+
+.rc-pg-btn:hover:not(:disabled) {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.rc-pg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rc-pg-btn.rc-pg-active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.rc-empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--gray-3);
+}
+
+.rc-empty p {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 12px 0 6px;
+    color: var(--gray-2);
+}
+
+.rc-empty span { font-size: 13px; }
+
+/* ── Copy raw XML button ────────────────────────────────────────────────── */
+.rc-copy-btn {
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    align-self: flex-start;
+}
+
+.rc-copy-btn:hover {
+    background: #334155;
+    color: #e2e8f0;
+}
+
+.rc-copy-btn.copied {
+    background: #14532d;
+    color: #86efac;
+    border-color: #166534;
+}

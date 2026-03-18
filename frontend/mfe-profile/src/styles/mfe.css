@@ -1,0 +1,21 @@
+/* mfe.css — static base tokens; brand tokens set by applyTheme() at runtime */
+:root {
+  --white:#ffffff; --black:#0f172a; --black-3:#1e293b;
+  --gray-1:#334155; --gray-2:#64748b; --gray-3:#94a3b8; --gray-4:#cbd5e1; --gray-5:#e2e8f0; --gray-6:#f1f5f9; --gray-7:#f8fafc;
+  --ok:#059669; --ok-light:#ecfdf5; --ok-border:#b7dfc5;
+  --danger:#dc2626; --danger-light:#fef2f2; --danger-border:#f5c6c2;
+  --warn:#9a6500; --warn-light:#fff8e6; --warn-border:#f5d9a8;
+  --highlight-bg:#fff3b0; --highlight-color:#7a5000;
+  --info:#1a5fa3;
+  --accent:#6366f1; --accent-light:#eef2ff; --accent-mid:#c7d2fe; --accent-hover-bg:#eff6ff;
+  --radius-sm:5px; --radius:8px; --radius-md:12px; --radius-lg:14px;
+  --shadow:0 2px 6px rgb(0 0 0/0.05),0 1px 3px rgb(0 0 0/0.04);
+  --shadow-md:0 8px 16px rgb(0 0 0/0.08),0 3px 6px rgb(0 0 0/0.05);
+  --shadow-modal:0 20px 60px rgba(10,10,10,.14),0 8px 20px rgba(10,10,10,.08);
+  --overlay-bg:rgba(10,10,10,0.40);
+  --focus-ring:0 0 0 3px rgba(10,10,10,0.06);
+  --mono:ui-monospace,"Cascadia Code","Source Code Pro",Menlo,Consolas,monospace;
+  --font-mono:ui-monospace,"Cascadia Code","Source Code Pro",Menlo,Consolas,monospace;
+}
+*,*::before,*::after { font-family:var(--font) !important; }
+.mfe-root { font-family:var(--font); background:var(--background-color); color:var(--data-color); min-height:100%; }
