@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import "./Search.css";
+import "./RawCopies.css";
 import { useAuth } from "../AuthContext";
 
 // ── All API endpoints read from .env — no hardcoded URLs ─────────────────────
 const API_BASE_URL      = `${process.env.REACT_APP_API_BASE_URL || "http://localhost:8080"}/api/search`;
 const API_DROPDOWN_URL   = `${process.env.REACT_APP_API_BASE_URL || "http://localhost:8080"}/api/dropdown-options`;
 const API_FIELD_CFG_URL  = `${process.env.REACT_APP_API_BASE_URL || "http://localhost:8080"}/api/search/field-config`;
+const API_RAW_COPIES_URL = `${process.env.REACT_APP_API_BASE_URL || "http://localhost:8080"}/api/raw-copies`;
 
-// ── MT/MX pair map (used for "ALL MT&MX" format) ─────────────────────────────
+// ── MT/MX pair map ────────────────────────────────────────────────────────────
 const BASE_MT_MX_PAIRS = {
     "MT103/pacs.008": ["MT103", "pacs.008"],
     "MT199/pacs.002": ["MT199", "pacs.002"],
@@ -15,7 +17,6 @@ const BASE_MT_MX_PAIRS = {
     "MT700/pain.001": ["MT700", "pain.001"],
     "MT940/camt.053": ["MT940", "camt.053"],
 };
-
 let allMtMxTypeMap = { ...BASE_MT_MX_PAIRS };
 
 const addOneMonth = (dateStr) => {
@@ -24,18 +25,15 @@ const addOneMonth = (dateStr) => {
     const next = new Date(y, m, d);
     return `${next.getFullYear()}/${String(next.getMonth() + 1).padStart(2, "0")}/${String(next.getDate()).padStart(2, "0")}`;
 };
-
 const clampToOneMonth = (startStr, endStr) => {
     if (!startStr || !endStr) return endStr;
     const maxEnd = addOneMonth(startStr);
     return endStr > maxEnd ? maxEnd : endStr;
 };
-
 const normalizeFormat = (rawFormat) => {
     if (!rawFormat) return rawFormat;
     return rawFormat.replace("ALL-MT&MX", "ALL MT&MX");
 };
-
 const buildAllMtMxTypeMap = (backendPairs) => {
     const map = { ...BASE_MT_MX_PAIRS };
     if (backendPairs && backendPairs.length > 0) {
@@ -48,9 +46,7 @@ const buildAllMtMxTypeMap = (backendPairs) => {
     }
     return map;
 };
-
 const getDisplayFormat = (msg) => normalizeFormat(msg.format);
-
 const getDisplayType = (msg) => {
     if (normalizeFormat(msg.format) === "ALL MT&MX") {
         for (const [pairedLabel, individualTypes] of Object.entries(allMtMxTypeMap)) {
@@ -59,8 +55,6 @@ const getDisplayType = (msg) => {
     }
     return msg.type;
 };
-
-// ── Direction helpers ─────────────────────────────────────────────────────────
 const formatDirection = (val) => {
     if (!val) return "—";
     const v = String(val).trim().toUpperCase();
@@ -76,6 +70,31 @@ const dirClass = (val) => {
     return "";
 };
 const statusCls = (s) => ({ ACCEPTED: "badge-ok", DELIVERED: "badge-ok", PENDING: "badge-pending", PROCESSING: "badge-pending", REPAIR: "badge-pending", REJECTED: "badge-bypass", FAILED: "badge-bypass" }[s] || "");
+
+// ── Raw Copies helpers ────────────────────────────────────────────────────────
+const rcStatusCls = (s) => {
+    if (!s) return "rc-status rc-status-default";
+    const u = s.toUpperCase();
+    if (u.includes("OK") || u.includes("DISTRIBUTED") || u.includes("ACCEPTED") || u.includes("DELIVERED"))
+        return "rc-status rc-status-ok";
+    if (u.includes("PENDING") || u.includes("PROCESSING") || u.includes("PROGRESS"))
+        return "rc-status rc-status-pending";
+    if (u.includes("FAIL") || u.includes("REJECT") || u.includes("ERROR"))
+        return "rc-status rc-status-fail";
+    return "rc-status rc-status-default";
+};
+const rcDirCls = (d) => {
+    if (!d) return "rc-dir rc-dir-rt";
+    const u = d.toUpperCase();
+    if (u === "INBOUND")  return "rc-dir rc-dir-in";
+    if (u === "OUTBOUND") return "rc-dir rc-dir-out";
+    return "rc-dir rc-dir-rt";
+};
+const fmtDate = (s) => {
+    if (!s) return "—";
+    try { return new Date(s).toLocaleString("en-US", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12: false }); }
+    catch { return s; }
+};
 
 function highlight(text, search) {
     if (!search || !text) return text ?? "—";
@@ -127,13 +146,7 @@ const COLUMNS = [
     { key: "settlementDate",      label: "Settlement Date", sortable: true },
 ];
 
-// ── Advanced mode: field definitions ─────────────────────────────────────────
-// Fully dynamic — every field in the DB is represented here.
-// stateKeys    = keys in searchState that this field controls
-// colKeys      = result table column keys auto-shown in advanced mode
-// backendParam = exact query param name sent to /api/search
 const FIELD_DEFINITIONS = [
-    // ── Classification ────────────────────────────────────────────────────
     { key: "format",               label: "Message Format",          group: "Classification", type: "select",       optKey: "formats",                placeholder: "All Formats",        stateKeys: ["format"],                                   colKeys: ["format"],             backendParam: "messageType"           },
     { key: "type",                 label: "Message Type",            group: "Classification", type: "select-type",  optKey: null,                     placeholder: "All Types",          stateKeys: ["type"],                                     colKeys: ["type"],               backendParam: "messageCode"           },
     { key: "direction",            label: "Message Direction",       group: "Classification", type: "select",       optKey: "directions",             placeholder: "All Directions",     stateKeys: ["direction"],                                colKeys: ["direction"],          backendParam: "io"                    },
@@ -142,20 +155,13 @@ const FIELD_DEFINITIONS = [
     { key: "copyIndicator",        label: "Copy Indicator",          group: "Classification", type: "select",       optKey: "copyIndicators",         placeholder: "All",                stateKeys: ["copyIndicator"],                            colKeys: [],                     backendParam: "copyIndicator"         },
     { key: "finCopy",              label: "FIN-COPY Service",        group: "Classification", type: "select",       optKey: "finCopyServices",        placeholder: "All",                stateKeys: ["finCopy"],                                  colKeys: ["finCopy"],            backendParam: "finCopyService"        },
     { key: "possibleDuplicate",    label: "Possible Duplicate",      group: "Classification", type: "select",       optKey: null,                     placeholder: "All",                stateKeys: ["possibleDuplicate"],                        colKeys: [],                     backendParam: "possibleDuplicate",  options: ["true","false"] },
-    // crossBorder not in new messages schema
-
-    // ── Date & Time ───────────────────────────────────────────────────────
     { key: "dateRange",            label: "Creation Date Range",     group: "Date & Time",    type: "date-range",   optKey: null,                     placeholder: null,                 stateKeys: ["startDate","startTime","endDate","endTime"], colKeys: ["date","time"],         backendParam: "startDate,endDate"     },
     { key: "valueDateRange",       label: "Value Date Range",        group: "Date & Time",    type: "date-range2",  optKey: null,                     placeholder: null,                 stateKeys: ["valueDateFrom","valueDateTo"],               colKeys: ["valueDate"],          backendParam: "valueDateFrom,valueDateTo" },
     { key: "receivedDateRange",    label: "Received Date Range",     group: "Date & Time",    type: "date-range2",  optKey: null,                     placeholder: null,                 stateKeys: ["receivedDateFrom","receivedDateTo"],         colKeys: ["receivedDT"],         backendParam: "receivedDateFrom,receivedDateTo" },
     { key: "statusDateRange",      label: "Status Date Range",       group: "Date & Time",    type: "date-range2",  optKey: null,                     placeholder: null,                 stateKeys: ["statusDateFrom","statusDateTo"],             colKeys: ["statusDate"],         backendParam: "statusDateFrom,statusDateTo" },
-
-    // ── Parties ───────────────────────────────────────────────────────────
     { key: "sender",               label: "Sender BIC",              group: "Parties",        type: "text",         placeholder: "Enter Sender BIC",                               stateKeys: ["sender"],                                   colKeys: ["sender"],             backendParam: "sender"                },
     { key: "receiver",             label: "Receiver BIC",            group: "Parties",        type: "text",         placeholder: "Enter Receiver BIC",                             stateKeys: ["receiver"],                                 colKeys: ["receiver"],           backendParam: "receiver"              },
     { key: "correspondent",        label: "Correspondent",           group: "Parties",        type: "text",         placeholder: "Enter Correspondent BIC",                        stateKeys: ["correspondent"],                            colKeys: ["correspondent"],      backendParam: "correspondent"         },
-
-    // ── References ────────────────────────────────────────────────────────
     { key: "mur",                  label: "User Reference (MUR)",    group: "References",     type: "text",         placeholder: "MUR",                                            stateKeys: ["userReference"],                            colKeys: ["userReference"],      backendParam: "mur"                   },
     { key: "reference",            label: "Reference",               group: "References",     type: "text",         placeholder: "Reference",                                      stateKeys: ["reference"],                                colKeys: [],                     backendParam: "reference"             },
     { key: "transactionReference", label: "Transaction Reference",   group: "References",     type: "text",         placeholder: "Transaction Reference",                          stateKeys: ["transactionReference"],                     colKeys: [],                     backendParam: "transactionReference"  },
@@ -167,57 +173,37 @@ const FIELD_DEFINITIONS = [
     { key: "networkReference",     label: "Network Reference",       group: "References",     type: "text",         placeholder: "Network Reference",                              stateKeys: ["networkReference"],                         colKeys: [],                     backendParam: "networkReference"      },
     { key: "e2eMessageId",         label: "E2E Message ID",          group: "References",     type: "text",         placeholder: "End-to-End Message ID",                          stateKeys: ["e2eMessageId"],                             colKeys: [],                     backendParam: "e2eMessageId"          },
     { key: "seqRange",             label: "Sequence No. Range",      group: "References",     type: "seq-range",    placeholder: null,                                             stateKeys: ["seqFrom","seqTo"],                          colKeys: ["sequenceNumber"],     backendParam: "seqFrom,seqTo"         },
-
-    // ── Financial ─────────────────────────────────────────────────────────
     { key: "amountRange",          label: "Amount Range",            group: "Financial",      type: "amount-range", placeholder: null,                                             stateKeys: ["amountFrom","amountTo"],                    colKeys: ["amount","currency"],  backendParam: "amountFrom,amountTo"   },
     { key: "currency",             label: "Currency (CCY)",          group: "Financial",      type: "select",       optKey: "currencies",             placeholder: "All Currencies",     stateKeys: ["currency"],                                 colKeys: ["currency"],           backendParam: "ccy"                   },
-
-    // ── Routing ───────────────────────────────────────────────────────────
     { key: "network",              label: "Network Protocol",        group: "Routing",        type: "select",       optKey: "networks",               placeholder: "All Networks",       stateKeys: ["network"],                                  colKeys: ["network"],            backendParam: "networkProtocol"       },
     { key: "networkChannel",       label: "Network Channel",         group: "Routing",        type: "select",       optKey: "networkChannels",        placeholder: "All Channels",       stateKeys: ["networkChannel"],                           colKeys: ["backendChannel"],     backendParam: "networkChannel"        },
     { key: "networkPriority",      label: "Network Priority",        group: "Routing",        type: "select",       optKey: "networkPriorities",      placeholder: "All Priorities",     stateKeys: ["networkPriority"],                          colKeys: [],                     backendParam: "networkPriority"       },
-    // networkStatus not in new messages schema
     { key: "deliveryMode",         label: "Delivery Mode",           group: "Routing",        type: "select",       optKey: "deliveryModes",          placeholder: "All Modes",          stateKeys: ["deliveryMode"],                             colKeys: ["deliveryMode"],       backendParam: "deliveryMode"          },
     { key: "service",              label: "Service",                 group: "Routing",        type: "select",       optKey: "services",               placeholder: "All Services",       stateKeys: ["service"],                                  colKeys: ["service"],            backendParam: "service"               },
-    // sourceSystem/source not in new messages schema
     { key: "country",              label: "Country",                 group: "Routing",        type: "select",       optKey: "countries",              placeholder: "All Countries",      stateKeys: ["country"],                                  colKeys: [],                     backendParam: "country"               },
     { key: "originCountry",        label: "Origin Country",          group: "Routing",        type: "select",       optKey: "originCountries",        placeholder: "All Countries",      stateKeys: ["originCountry"],                            colKeys: [],                     backendParam: "originCountry"         },
     { key: "destinationCountry",   label: "Destination Country",     group: "Routing",        type: "select",       optKey: "destinationCountries",   placeholder: "All Countries",      stateKeys: ["destinationCountry"],                       colKeys: [],                     backendParam: "destinationCountry"    },
-
-    // ── Ownership & Workflow ──────────────────────────────────────────────
     { key: "ownerUnit",            label: "Owner / Unit",            group: "Ownership",      type: "select",       optKey: "ownerUnits",             placeholder: "All Units",          stateKeys: ["ownerUnit"],                                colKeys: ["ownerUnit"],          backendParam: "owner"                 },
     { key: "workflow",             label: "Workflow",                group: "Ownership",      type: "select",       optKey: "workflows",              placeholder: "All Workflows",      stateKeys: ["workflow"],                                 colKeys: [],                     backendParam: "workflow"              },
     { key: "workflowModel",        label: "Workflow Model",          group: "Ownership",      type: "select",       optKey: "workflowModels",         placeholder: "All Models",         stateKeys: ["workflowModel"],                            colKeys: [],                     backendParam: "workflowModel"         },
     { key: "originatorApplication",label: "Originator Application",  group: "Ownership",      type: "select",       optKey: "originatorApplications", placeholder: "All Applications",   stateKeys: ["originatorApplication"],                    colKeys: [],                     backendParam: "originatorApplication" },
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────
     { key: "phase",                label: "Phase",                   group: "Lifecycle",      type: "select",       optKey: "phases",                 placeholder: "All Phases",         stateKeys: ["phase"],                                    colKeys: ["phase"],              backendParam: "phase"                 },
     { key: "action",               label: "Action",                  group: "Lifecycle",      type: "select",       optKey: "actions",                placeholder: "All Actions",        stateKeys: ["action"],                                   colKeys: ["action"],             backendParam: "action"                },
     { key: "reason",               label: "Reason",                  group: "Lifecycle",      type: "select",       optKey: "reasons",                placeholder: "All Reasons",        stateKeys: ["reason"],                                   colKeys: ["reason"],             backendParam: "reason"                },
-
-    // ── Processing ────────────────────────────────────────────────────────
     { key: "processingType",       label: "Processing Type",         group: "Processing",     type: "select",       optKey: "processingTypes",        placeholder: "All Types",          stateKeys: ["processingType"],                           colKeys: ["processingType"],     backendParam: "processingType"        },
     { key: "processPriority",      label: "Process Priority",        group: "Processing",     type: "select",       optKey: "processPriorities",      placeholder: "All Priorities",     stateKeys: ["processPriority"],                          colKeys: [],                     backendParam: "processPriority"       },
     { key: "profileCode",          label: "Profile Code",            group: "Processing",     type: "select",       optKey: "profileCodes",           placeholder: "All Profiles",       stateKeys: ["profileCode"],                              colKeys: [],                     backendParam: "profileCode"           },
     { key: "environment",          label: "Environment",             group: "Processing",     type: "select",       optKey: "environments",           placeholder: "All Environments",   stateKeys: ["environment"],                              colKeys: [],                     backendParam: "environment"           },
     { key: "nack",                 label: "NACK Code",               group: "Processing",     type: "select",       optKey: "nackCodes",              placeholder: "All",                stateKeys: ["nack"],                                     colKeys: ["nack"],               backendParam: "nack"                  },
-
-    // ── AML / Compliance ──────────────────────────────────────────────────
     { key: "amlStatus",            label: "AML Status",              group: "Compliance",     type: "select",       optKey: "amlStatuses",            placeholder: "All Statuses",       stateKeys: ["amlStatus"],                                colKeys: ["amlStatus"],          backendParam: "amlStatus"             },
     { key: "amlDetails",           label: "AML Details",             group: "Compliance",     type: "text",         placeholder: "AML reference...",                               stateKeys: ["amlDetails"],                               colKeys: ["amlDetails"],         backendParam: "amlDetails"            },
-
-    // ── History ───────────────────────────────────────────────────────────
-    // ── History Lines (top-level array confirmed in real data) ──────────
     { key: "historyEntity",        label: "History Entity",          group: "History",        type: "text",         placeholder: "e.g. Screening, Validation",                     stateKeys: ["historyEntity"],                            colKeys: [],                     backendParam: "historyEntity"         },
     { key: "historyDescription",   label: "History Comment",         group: "History",        type: "text",         placeholder: "Search history comments",                        stateKeys: ["historyDescription"],                       colKeys: [],                     backendParam: "historyDescription"    },
     { key: "historyPhase",         label: "History Phase",           group: "History",        type: "select",       optKey: "phases",         placeholder: "All Phases",          stateKeys: ["historyPhase"],                             colKeys: [],                     backendParam: "historyPhase"          },
     { key: "historyAction",        label: "History Action",          group: "History",        type: "select",       optKey: "actions",        placeholder: "All Actions",         stateKeys: ["historyAction"],                            colKeys: [],                     backendParam: "historyAction"         },
     { key: "historyUser",          label: "History User",            group: "History",        type: "text",         placeholder: "e.g. SYS_USER_01",                               stateKeys: ["historyUser"],                              colKeys: [],                     backendParam: "historyUser"           },
     { key: "historyChannel",       label: "History Channel",         group: "History",        type: "text",         placeholder: "e.g. ADCBGBS0",                                  stateKeys: ["historyChannel"],                           colKeys: [],                     backendParam: "historyChannel"        },
-    // ── Payload Search ────────────────────────────────────────────────────
     { key: "block4Value",          label: "Payload Field Value",     group: "Payload",        type: "text-wide",    placeholder: "Search in raw FIN fields",                       stateKeys: ["block4Value"],                              colKeys: [],                     backendParam: "block4Value"           },
-
-    // ── Other ─────────────────────────────────────────────────────────────
     { key: "freeSearchText",       label: "Free Search Text",        group: "Other",          type: "text-wide",    placeholder: "Searches across all fields...",                  stateKeys: ["freeSearchText"],                           colKeys: [],                     backendParam: "freeSearchText"        },
 ];
 
@@ -227,9 +213,7 @@ const SORT_NONE = null, SORT_ASC = "asc", SORT_DESC = "desc";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS   = ["Su","Mo","Tu","We","Th","Fr","Sa"];
 
-// ── Initial state ─────────────────────────────────────────────────────────────
 const initialSearchState = {
-    // Original fixed search fields
     format:"", type:"", messageCode:"", startDate:"", startTime:"", endDate:"", endTime:"",
     direction:"", network:"", sender:"", receiver:"",
     status:"", currency:"", userReference:"", rfkReference:"",
@@ -240,7 +224,6 @@ const initialSearchState = {
     reference:"", transactionReference:"", transferReference:"",
     historyEntity:"", historyDescription:"", historyPhase:"", historyAction:"", historyUser:"", historyChannel:"",
     block4Value:"",
-    // Advanced-only fields
     relatedReference:"", mxInputReference:"", mxOutputReference:"",
     networkReference:"", e2eMessageId:"",
     networkStatus:"", deliveryMode:"", service:"",
@@ -252,17 +235,20 @@ const initialSearchState = {
     valueDateFrom:"", valueDateTo:"",
     receivedDateFrom:"", receivedDateTo:"",
     statusDateFrom:"", statusDateTo:"",
+};
 
+const initialRcFilters = {
+    messageReference: "", messageId: "", sender: "", receiver: "",
+    messageTypeCode: "", direction: "", currentStatus: "", protocol: "",
+    inputType: "", source: "", isDuplicate: "", startDate: "", endDate: "", freeText: "",
 };
 
 const emptyOpts = {
-    // Original
     formats:[], types:[], mtTypes:[], mxTypes:[], allMtMxTypes:[],
     networks:[], sourceSystems:[], currencies:[], ownerUnits:[],
     backendChannels:[], directions:[], statuses:[], finCopies:[], actions:[], phases:[],
     messageCodes:[], senders:[], receivers:[], countries:[],
     workflows:[], networkChannels:[], networkPriorities:[], ioDirections:[],
-    // New
     networkStatuses:[], deliveryModes:[], services:[],
     originCountries:[], destinationCountries:[],
     workflowModels:[], originatorApplications:[],
@@ -270,6 +256,7 @@ const emptyOpts = {
     amlStatuses:[], nackCodes:[], messagePriorities:[], copyIndicators:[],
     finCopyServices:[], reasons:[],
 };
+
 
 // ── DateTimePicker ─────────────────────────────────────────────────────────────
 function DateTimePicker({ label, dateValue, timeValue, onDateChange, onTimeChange, onKeyDown }) {
@@ -421,6 +408,7 @@ function DateTimePicker({ label, dateValue, timeValue, onDateChange, onTimeChang
     );
 }
 
+
 // ── Dynamic Select ─────────────────────────────────────────────────────────────
 function DynSelect({ value, onChange, placeholder, options, loading }) {
     return (
@@ -431,13 +419,7 @@ function DynSelect({ value, onChange, placeholder, options, loading }) {
     );
 }
 
-// ── Main Search Component ─────────────────────────────────────────────────────
-// ══════════════════════════════════════════════════════════════════════════
-// FloatingModal — defined OUTSIDE Search() so React never unmounts/remounts
-// it on parent state changes. Receives callbacks via props.
-// Anti-blink guarantee: drag and resize ONLY touch DOM style directly.
-// setOpenModals is NEVER called during mousemove — only on mouseup once.
-// ══════════════════════════════════════════════════════════════════════════
+
 function FloatingModal({
     modal,
     processed,
@@ -864,10 +846,14 @@ function FloatingModal({
     );
 }
 
+
+
+// ════════════════════════════════════════════════════════════════════════════════
+// MAIN SEARCH COMPONENT
+// ════════════════════════════════════════════════════════════════════════════════
 function Search() {
     const { token } = useAuth();
 
-    // Build fetch headers with JWT
     const authHeaders = useCallback(() => ({
         "Content-Type": "application/json",
         ...(token ? { "Authorization": `Bearer ${token}` } : {})
@@ -892,20 +878,8 @@ function Search() {
     const [sortDir,      setSortDir]      = useState(SORT_NONE);
     const [selectedRows, setSelectedRows] = useState(new Set());
     const [visibleCols,  setVisibleCols]  = useState(new Set(COLUMNS.map(c=>c.key)));
-    const [colWidths,    setColWidths]    = useState({});  // key → px width
-    const colResizingRef = useRef(null); // { key, startX, startW, thEl }
-    // Auto-add new dynamic columns to visibleCols when they arrive from backend
-    useEffect(()=>{
-        if (!dynFieldsLoaded) return;
-        const newDynCols = dynamicFields.filter(f=>f.showInTable && f.columnLabel);
-        if (newDynCols.length > 0) {
-            setVisibleCols(prev => {
-                const next = new Set(prev);
-                newDynCols.forEach(f => next.add(f.key));
-                return next;
-            });
-        }
-    }, [dynFieldsLoaded, dynamicFields]);
+    const [colWidths,    setColWidths]    = useState({});
+    const colResizingRef = useRef(null);
     const [showColManager,  setShowColManager]  = useState(false);
     const [panelCollapsed,  setPanelCollapsed]  = useState(false);
     const [savedSearches,   setSavedSearches]   = useState([]);
@@ -915,8 +889,8 @@ function Search() {
     const [showExportMenu,  setShowExportMenu]  = useState(false);
     const [exportScope,     setExportScope]     = useState("all");
     const [toastMsg,        setToastMsg]        = useState(null);
-    // ── Multi-window modal state ──────────────────────────────────────
-    const [openModals,   setOpenModals]   = useState([]);
+    const [openModals,      setOpenModals]      = useState([]);
+    const openModalsRef = useRef([]);   // always-current mirror — no stale closure
     const topZRef  = useRef(1000);
     const modalIdRef = useRef(0);
     const [serverTotal,       setServerTotal]      = useState(0);
@@ -926,8 +900,29 @@ function Search() {
     const [advancedFields,  setAdvancedFields]  = useState([]);
     const [showFieldPicker, setShowFieldPicker] = useState(false);
     const [fieldPickerQuery,setFieldPickerQuery]= useState("");
-    const [dynamicFields,   setDynamicFields]   = useState([]);   // loaded from /api/search/field-config
+    const [dynamicFields,   setDynamicFields]   = useState([]);
     const [dynFieldsLoaded, setDynFieldsLoaded] = useState(false);
+
+    // ── Raw Copies state ─────────────────────────────────────────────────────
+    const [rcFilters,        setRcFilters]        = useState(initialRcFilters);
+    const [rcOpts,           setRcOpts]           = useState({ messageTypeCodes:[], directions:[], statuses:[], protocols:[], inputTypes:[], sources:[] });
+    const [rcOptsLoading,    setRcOptsLoading]    = useState(true);
+    const [rcResults,        setRcResults]        = useState([]);
+    const [rcTotal,          setRcTotal]          = useState(0);
+    const [rcTotalPages,     setRcTotalPages]     = useState(0);
+    const [rcPage,           setRcPage]           = useState(0);
+    // ── PATCHED: full pagination state (matches Fixed/Advanced) ──────────────
+    const rcPagesPerGroup = 5;
+    const [rcRecordsPerPage, setRcRecordsPerPage] = useState(20);
+    const [rcGoToPage,       setRcGoToPage]       = useState("");
+    const [rcStartPage,      setRcStartPage]      = useState(1);
+    // ─────────────────────────────────────────────────────────────────────────
+    const [rcLoading,        setRcLoading]        = useState(false);
+    const [rcError,          setRcError]          = useState(null);
+    const [rcSearched,       setRcSearched]       = useState(false);
+    const [rcPanelCollapsed, setRcPanelCollapsed] = useState(false);
+    const [rcExpandedRow,    setRcExpandedRow]    = useState(null);
+    const [rcCopiedId,       setRcCopiedId]       = useState(null);
 
     const bottomScrollRef = useRef(null);
     const tableWrapperRef = useRef(null);
@@ -939,32 +934,37 @@ function Search() {
     const setField = (key,val) => setSearchState(s=>({...s,[key]:val}));
     const showToast = (msg,type="success") => { setToastMsg({msg,type}); setTimeout(()=>setToastMsg(null),3000); };
 
-    // ── Load dynamic field config from backend ───────────────────────────────
+    // Keep openModalsRef in sync — no stale closure in openModal
+    openModalsRef.current = openModals;
+
+    // ── Auto-add new dynamic columns ────────────────────────────────────────
+    useEffect(()=>{
+        if (!dynFieldsLoaded) return;
+        const newDynCols = dynamicFields.filter(f=>f.showInTable && f.columnLabel);
+        if (newDynCols.length > 0) {
+            setVisibleCols(prev => {
+                const next = new Set(prev);
+                newDynCols.forEach(f => next.add(f.key));
+                return next;
+            });
+        }
+    }, [dynFieldsLoaded, dynamicFields]);
+
+    // ── Load dynamic field config ────────────────────────────────────────────
     useEffect(()=>{
         if (!token) return;
         fetch(API_FIELD_CFG_URL, { headers: authHeaders() })
             .then(r=>{ if(!r.ok) throw new Error("field-config error"); return r.json(); })
             .then(data=>{
-                // data is FieldConfigResponse[] from backend
-                // Convert to FIELD_DEFINITIONS-compatible shape
                 const converted = data.map(f => ({
-                    key:          f.key,
-                    label:        f.label,
-                    group:        f.group,
-                    type:         f.type,
-                    optKey:       null,           // options come pre-loaded from backend
-                    _backendOpts: f.options || [], // actual option values
-                    placeholder:  f.options?.length ? `All ${f.label}` : `Enter ${f.label}`,
-                    stateKeys:    [f.key],
-                    colKeys:      f.showInTable ? [f.key] : [],
-                    backendParam: f.backendParam,
-                    columnLabel:  f.columnLabel,
-                    showInTable:  f.showInTable,
+                    key: f.key, label: f.label, group: f.group, type: f.type,
+                    optKey: null, _backendOpts: f.options || [],
+                    placeholder: f.options?.length ? `All ${f.label}` : `Enter ${f.label}`,
+                    stateKeys: [f.key], colKeys: f.showInTable ? [f.key] : [],
+                    backendParam: f.backendParam, columnLabel: f.columnLabel, showInTable: f.showInTable,
                 }));
                 setDynamicFields(converted);
                 setDynFieldsLoaded(true);
-
-                // Also extend initialSearchState with any new keys
                 const newKeys = converted.filter(f=>!(f.key in initialSearchState));
                 if (newKeys.length > 0) {
                     const patch = {};
@@ -972,24 +972,20 @@ function Search() {
                     setSearchState(s=>({...s,...patch}));
                 }
             })
-            .catch(()=>{ setDynFieldsLoaded(true); }); // fallback to static FIELD_DEFINITIONS
+            .catch(()=>{ setDynFieldsLoaded(true); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
     },[token]);
 
-    // ── Load dropdown options ─────────────────────────────────────────────────
+    // ── Load dropdown options ────────────────────────────────────────────────
     useEffect(()=>{
         if (!token) return;
         setOptsLoading(true);
         fetch(API_DROPDOWN_URL, { headers: authHeaders() })
             .then(r=>{ if(!r.ok) throw new Error("dropdown-options error"); return r.json(); })
             .then(data=>{
-                // backend returns: messageCodes, ioDirections, owners, networkChannels,
-                // networkProtocols, statuses, phases, actions, currencies, sourceSystems,
-                // countries, workflows, networkPriorities, formats(["MT","MX"])
                 if(data.allMtMxTypes) allMtMxTypeMap = buildAllMtMxTypeMap(data.allMtMxTypes);
                 setOpts(prev=>({
-                    ...prev,
-                    ...data,
+                    ...prev, ...data,
                     formats:              data.formats               || ["MT","MX"],
                     types:                data.messageCodes          || data.types              || [],
                     mtTypes:              (data.messageCodes||[]).filter(c=>c.toUpperCase().startsWith("MT")).sort(),
@@ -1006,25 +1002,19 @@ function Search() {
                     networkChannels:      data.networkChannels       || [],
                     networks:             data.networkProtocols      || data.networks            || [],
                     networkPriorities:    data.networkPriorities     || [],
-                    networkStatuses:      data.networkStatuses       || [],
                     deliveryModes:        data.deliveryModes         || [],
                     services:             data.services              || [],
                     currencies:           data.currencies            || [],
                     sourceSystems:        data.sourceSystems         || [],
                     countries:            data.countries             || [],
-                    originCountries:      data.originCountries       || [],
-                    destinationCountries: data.destinationCountries  || [],
                     workflows:            data.workflows             || [],
                     workflowModels:       data.workflowModels        || [],
                     originatorApplications:data.originatorApplications||[],
                     finCopies:            data.finCopies             || [],
                     finCopyServices:      data.finCopyServices       || [],
-                    senders:              data.senders               || [],
-                    receivers:            data.receivers             || [],
                     processingTypes:      data.processingTypes       || [],
                     processPriorities:    data.processPriorities     || [],
                     profileCodes:         data.profileCodes          || [],
-                    environments:         data.environments          || [],
                     amlStatuses:          data.amlStatuses           || [],
                     nackCodes:            data.nackCodes             || [],
                     messagePriorities:    data.messagePriorities     || [],
@@ -1036,7 +1026,17 @@ function Search() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     },[token]);
 
-    // Derive opts from loaded messages when API opts are empty (fallback)
+    // ── Load Raw Copies dropdown options ─────────────────────────────────────
+    useEffect(()=>{
+        if (!token) return;
+        fetch(`${API_RAW_COPIES_URL}/dropdown-options`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(d => { setRcOpts(d.data || d); setRcOptsLoading(false); })
+            .catch(() => setRcOptsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[token]);
+
+    // Derive opts from loaded messages when API opts are empty
     useEffect(()=>{
         if(optsLoading || opts.formats.length>0 || allMessages.length===0) return;
         const unique = (key) => [...new Set(allMessages.map(m=>m[key]).filter(Boolean))].sort();
@@ -1060,8 +1060,6 @@ function Search() {
         return opts.types || [];
     },[searchState.format, opts]);
 
-    // ── Merge dynamic fields (from backend) with static FIELD_DEFINITIONS ────────
-    // Must be declared here — before any function that references activeFieldDefs
     const activeFieldDefs = useMemo(()=>{
         if (dynFieldsLoaded && dynamicFields.length > 0) {
             const dynKeys = new Set(dynamicFields.map(f=>f.key));
@@ -1082,11 +1080,8 @@ function Search() {
         return ()=>document.removeEventListener("mousedown",h);
     },[]);
 
-    // Keyboard shortcuts (modal nav + escape)
     useEffect(()=>{
-        const onKey=(e)=>{
-            if(e.key==="Escape"){ setShowFieldPicker(false); }
-        };
+        const onKey=(e)=>{ if(e.key==="Escape"){ setShowFieldPicker(false); } };
         document.addEventListener("keydown",onKey);
         return ()=>document.removeEventListener("keydown",onKey);
     });
@@ -1097,19 +1092,21 @@ function Search() {
         if(src.currentTarget!==tableWrapperRef.current&&tableWrapperRef.current) tableWrapperRef.current.scrollLeft=sl;
     };
 
-    // ── Mode switch ───────────────────────────────────────────────────────────
+    // ── Mode switch ──────────────────────────────────────────────────────────
     const handleModeSwitch = (mode) => {
         if (mode === searchMode) return;
         setSearchMode(mode);
-        setSearchState(initialSearchState);
-        setResult([]); setShowResult(false);
-        setCurrentPage(1); setStartPage(1);
-        setColFilters({}); setActiveCol(null);
-        setSortKey(null); setSortDir(SORT_NONE);
-        setSelectedRows(new Set()); setHighlightText("");
-        setServerTotal(0); setServerTotalPages(0);
-        if (mode === "advanced") setAdvancedFields(["dateRange"]);
-        showToast(`Switched to ${mode === "fixed" ? "Fixed" : "Advanced"} Search`, "info");
+        if (mode !== "rawcopies") {
+            setSearchState(initialSearchState);
+            setResult([]); setShowResult(false);
+            setCurrentPage(1); setStartPage(1);
+            setColFilters({}); setActiveCol(null);
+            setSortKey(null); setSortDir(SORT_NONE);
+            setSelectedRows(new Set()); setHighlightText("");
+            setServerTotal(0); setServerTotalPages(0);
+            if (mode === "advanced") setAdvancedFields(["dateRange"]);
+        }
+        showToast(`Switched to ${mode === "fixed" ? "Fixed" : mode === "advanced" ? "Advanced" : "Raw Copies"} Search`, "info");
     };
 
     const addAdvancedField = (fieldKey) => {
@@ -1135,7 +1132,6 @@ function Search() {
             const def = activeFieldDefs.find(f=>f.key===fkey) || FIELD_DEFINITIONS.find(f=>f.key===fkey);
             if (def) def.colKeys.forEach(ck=>colKeySet.add(ck));
         });
-        // Also add dynamically discovered columns not in static COLUMNS list
         const extraCols = [];
         advancedFields.forEach(fkey=>{
             const def = activeFieldDefs.find(f=>f.key===fkey);
@@ -1157,12 +1153,10 @@ function Search() {
         if (searchMode==="advanced") setAdvancedFields(["dateRange"]);
     };
 
-    // ── Build URL params — maps ALL searchState fields to backend API params ────
+    // ── Build URL params ─────────────────────────────────────────────────────
     const buildParams = useCallback((s, page, size) => {
         const params = new URLSearchParams();
-        const d = (v) => v && v.replace(/\//g, "-");  // YYYY/MM/DD → YYYY-MM-DD
-
-        // ── Classification ─────────────────────────────────────────────────
+        const d = (v) => v && v.replace(/\//g, "-");
         if(s.format)               params.set("messageType",           s.format);
         const msgCode = s.messageCode || s.type;
         if(msgCode)                params.set("messageCode",           msgCode);
@@ -1173,14 +1167,9 @@ function Search() {
         if(s.copyIndicator)        params.set("copyIndicator",         s.copyIndicator);
         if(s.finCopy)              params.set("finCopyService",        s.finCopy);
         if(s.possibleDuplicate)    params.set("possibleDuplicate",     s.possibleDuplicate);
-        // crossBorder not in new schema — omitted
-
-        // ── Parties ────────────────────────────────────────────────────────
         if(s.sender)               params.set("sender",                s.sender);
         if(s.receiver)             params.set("receiver",              s.receiver);
         if(s.correspondent)        params.set("correspondent",         s.correspondent);
-
-        // ── References ────────────────────────────────────────────────────
         if(s.reference)            params.set("reference",             s.reference);
         if(s.transactionReference) params.set("transactionReference",  s.transactionReference);
         if(s.transferReference)    params.set("transferReference",     s.transferReference);
@@ -1191,65 +1180,42 @@ function Search() {
         if(s.mxOutputReference)    params.set("mxOutputReference",     s.mxOutputReference);
         if(s.networkReference)     params.set("networkReference",      s.networkReference);
         if(s.e2eMessageId)         params.set("e2eMessageId",          s.e2eMessageId);
-
-        // ── Financial ─────────────────────────────────────────────────────
         if(s.currency)             params.set("ccy",                   s.currency);
         if(s.amountFrom && !isNaN(parseFloat(s.amountFrom))) params.set("amountFrom", parseFloat(s.amountFrom));
         if(s.amountTo   && !isNaN(parseFloat(s.amountTo)))   params.set("amountTo",   parseFloat(s.amountTo));
-
-        // ── Routing ────────────────────────────────────────────────────────
         if(s.network)              params.set("networkProtocol",       s.network);
         const netChan = s.backendChannel || s.networkChannel;
         if(netChan)                params.set("networkChannel",        netChan);
         if(s.networkPriority)      params.set("networkPriority",       s.networkPriority);
-        // networkStatus not in new messages schema — omitted
         if(s.deliveryMode)         params.set("deliveryMode",          s.deliveryMode);
         if(s.service)              params.set("service",               s.service);
-        // sourceSystem/source not in new messages schema — omitted
         if(s.country)              params.set("country",               s.country);
         if(s.originCountry)        params.set("originCountry",         s.originCountry);
         if(s.destinationCountry)   params.set("destinationCountry",    s.destinationCountry);
-
-        // ── Ownership & Workflow ───────────────────────────────────────────
         if(s.ownerUnit)            params.set("owner",                 s.ownerUnit);
         if(s.workflow)             params.set("workflow",              s.workflow);
         if(s.workflowModel)        params.set("workflowModel",         s.workflowModel);
         if(s.originatorApplication)params.set("originatorApplication", s.originatorApplication);
-
-        // ── Lifecycle ─────────────────────────────────────────────────────
         if(s.phase)                params.set("phase",                 s.phase);
         if(s.action)               params.set("action",                s.action);
         if(s.reason)               params.set("reason",                s.reason);
-
-        // ── Processing ────────────────────────────────────────────────────
         if(s.processingType)       params.set("processingType",        s.processingType);
         if(s.processPriority)      params.set("processPriority",       s.processPriority);
         if(s.profileCode)          params.set("profileCode",           s.profileCode);
         if(s.environment)          params.set("environment",           s.environment);
         if(s.nack)                 params.set("nack",                  s.nack);
-
-        // ── AML / Compliance ──────────────────────────────────────────────
         if(s.amlStatus)            params.set("amlStatus",             s.amlStatus);
         if(s.amlDetails)           params.set("amlDetails",            s.amlDetails);
-
-        // ── Sequence range ─────────────────────────────────────────────────
         if(s.seqFrom && !isNaN(parseInt(s.seqFrom,10))) params.set("seqFrom", parseInt(s.seqFrom,10));
         if(s.seqTo   && !isNaN(parseInt(s.seqTo,  10))) params.set("seqTo",   parseInt(s.seqTo,  10));
-
-        // ── Date ranges ────────────────────────────────────────────────────
         if(s.startDate)            params.set("startDate",             d(s.startDate));
         if(s.endDate)              params.set("endDate",               d(s.endDate));
         if(s.valueDateFrom)        params.set("valueDateFrom",         d(s.valueDateFrom));
         if(s.valueDateTo)          params.set("valueDateTo",           d(s.valueDateTo));
-        // settlementDate not in new messages schema — omitted
         if(s.statusDateFrom)       params.set("statusDateFrom",        d(s.statusDateFrom));
         if(s.statusDateTo)         params.set("statusDateTo",          d(s.statusDateTo));
-        // deliveredDate not in new schema — use receivedDate instead
         if(s.receivedDateFrom)     params.set("receivedDateFrom",      d(s.receivedDateFrom));
         if(s.receivedDateTo)       params.set("receivedDateTo",        d(s.receivedDateTo));
-
-        // ── History & free text ────────────────────────────────────────────
-        // historyLines IS at top level — restore history search params
         if(s.historyEntity)        params.set("historyEntity",         s.historyEntity);
         if(s.historyDescription)   params.set("historyDescription",    s.historyDescription);
         if(s.historyPhase)         params.set("historyPhase",          s.historyPhase);
@@ -1258,36 +1224,30 @@ function Search() {
         if(s.historyChannel)       params.set("historyChannel",        s.historyChannel);
         if(s.block4Value)          params.set("block4Value",           s.block4Value);
         if(s.freeSearchText)       params.set("freeSearchText",        s.freeSearchText);
-
         params.set("page", page);
         params.set("size", size);
         return params;
     }, []);
 
-    // ── Execute search ────────────────────────────────────────────────────────
+    // ── Execute SWIFT message search ──────────────────────────────────────────
     const handleSearch=(pageOverride)=>{
         if(searchMode==="advanced"&&advancedFields.length===1&&advancedFields[0]==="dateRange"){
             showToast("Add at least one more search field in Advanced mode","error"); return;
         }
         setIsSearching(true); setIsFetching(true); setFetchError(null);
-
         const page = (pageOverride !== undefined) ? pageOverride : 0;
         const params = buildParams(searchState, page, recordsPerPage);
-
         fetch(`${API_BASE_URL}?${params.toString()}`, { headers: authHeaders() })
             .then(r=>{ if(!r.ok) throw new Error(`Search failed (${r.status})`); return r.json(); })
             .then(data=>{
-                // Backend returns PagedResponse: { content, totalElements, totalPages, pageNumber, size, ... }
                 const rows = data.content || data;
-                setResult(rows);
-                setAllMessages(rows);
+                setResult(rows); setAllMessages(rows);
                 setServerTotal(data.totalElements || rows.length);
                 setServerTotalPages(data.totalPages || 1);
                 setCurrentPage((data.pageNumber||0)+1);
                 setStartPage(Math.floor((data.pageNumber||0)/pagesPerGroup)*pagesPerGroup+1);
                 setHighlightText(searchState.freeSearchText||"");
-                setShowResult(true);
-                setColFilters({}); setActiveCol(null); setGoToPage("");
+                setShowResult(true); setColFilters({}); setActiveCol(null); setGoToPage("");
                 setSortKey(null); setSortDir(SORT_NONE);
                 setSelectedRows(new Set()); setExportScope("all");
                 setIsSearching(false); setIsFetching(false);
@@ -1296,25 +1256,75 @@ function Search() {
                 if(!panelCollapsed && total>0) setPanelCollapsed(true);
             })
             .catch(err=>{
-                setFetchError(err.message);
-                setIsSearching(false); setIsFetching(false);
+                setFetchError(err.message); setIsSearching(false); setIsFetching(false);
                 showToast(err.message, "error");
             });
     };
 
     const handleKeyDown=(e)=>{ if(e.key==="Enter") handleSearch(); };
 
-    // openModal and helpers defined in multi-window system (injected before return)
+    // ── Raw Copies search ────────────────────────────────────────────────────
+    const setRcField = (key) => (e) => setRcFilters(f => ({ ...f, [key]: e.target.value }));
 
+    const doRcSearch = useCallback((p = 0) => {
+        if (!token) return;
+        setRcLoading(true); setRcError(null);
+        // PATCHED: use rcRecordsPerPage
+        const params = new URLSearchParams({ page: p, size: rcRecordsPerPage });
+        Object.entries(rcFilters).forEach(([k, v]) => { if (v !== "") params.set(k, v); });
+        fetch(`${API_RAW_COPIES_URL}?${params}`, { headers: authHeaders() })
+            .then(r => { if (!r.ok) throw new Error(`Error ${r.status}`); return r.json(); })
+            .then(data => {
+                const rows = data.content || data.rows || [];
+                setRcResults(rows);
+                setRcTotal(data.totalElements || rows.length);
+                setRcTotalPages(data.totalPages || 1);
+                setRcPage(p);
+                // PATCHED: update rcStartPage
+                setRcStartPage(Math.floor(p / rcPagesPerGroup) * rcPagesPerGroup + 1);
+                setRcSearched(true);
+                setRcLoading(false);
+                if (!rcPanelCollapsed && rows.length > 0) setRcPanelCollapsed(true);
+                showToast(`Found ${data.totalElements || rows.length} raw cop${(data.totalElements || rows.length) !== 1 ? "ies" : "y"}`, "info");
+            })
+            .catch(e => { setRcError(e.message); setRcLoading(false); showToast(e.message, "error"); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, authHeaders, rcFilters, rcPanelCollapsed, rcRecordsPerPage]);
+
+    const handleRcReset = () => {
+        setRcFilters(initialRcFilters);
+        setRcResults([]); setRcTotal(0); setRcTotalPages(0); setRcPage(0);
+        // PATCHED: reset new pagination state
+        setRcStartPage(1); setRcGoToPage("");
+        setRcSearched(false); setRcExpandedRow(null); setRcError(null); setRcPanelCollapsed(false);
+    };
+
+    const handleRcKey = (e) => { if (e.key === "Enter") doRcSearch(0); };
+
+    const rcGrouped = useMemo(() => {
+        const map = new Map();
+        rcResults.forEach(row => {
+            const ref = row.messageReference || "—";
+            if (!map.has(ref)) map.set(ref, []);
+            map.get(ref).push(row);
+        });
+        return [...map.entries()];
+    }, [rcResults]);
+
+    const rcDupCount = rcResults.filter(r => r.isDuplicate).length;
+    const rcOkCount  = rcResults.filter(r => rcStatusCls(r.currentStatus).includes("ok")).length;
+
+    const copyRaw = (id, text) => {
+        navigator.clipboard.writeText(text || "").then(() => {
+            setRcCopiedId(id);
+            setTimeout(() => setRcCopiedId(null), 1800);
+        });
+    };
+
+    // ── Reference helper ─────────────────────────────────────────────────────
     const getReference=(msg)=>
-        msg.reference            ||
-        msg.mur                  ||
-        msg.transactionReference ||
-        msg.transferReference    ||
-        msg.relatedReference     ||
-        msg.userReference        ||
-        msg.rfkReference         ||
-        msg.messageReference     ||
+        msg.reference || msg.mur || msg.transactionReference || msg.transferReference ||
+        msg.relatedReference || msg.userReference || msg.rfkReference || msg.messageReference ||
         (msg.uetr ? `UETR-${String(msg.uetr).slice(0,8).toUpperCase()}` : null) ||
         `ID-${String(msg.id||msg.sequenceNumber||"").slice(0,10)||"UNKNOWN"}`;
 
@@ -1331,15 +1341,23 @@ function Search() {
     };
 
     const handleColFilter=(key,value)=>{ setColFilters(p=>({...p,[key]:value})); setCurrentPage(1); setStartPage(1); };
-    const getMsgId=(msg)=>`${msg.sequenceNumber}-${msg.uetr||msg.rfkReference||msg.userReference||Math.random()}`;
+
+    // Stable unique key — MongoDB _id priority, no Math.random()
+    const getMsgId = (msg) => {
+        const raw = msg.rawMessage || msg;
+        const oid = raw._id?.$oid || raw._id || msg.id;
+        if (oid) return String(oid);
+        if (msg.transactionReference) return `txn-${msg.transactionReference}`;
+        if (msg.reference)            return `ref-${msg.reference}`;
+        if (msg.mur)                  return `mur-${msg.mur}`;
+        return `seq-${msg.sequenceNumber}-${msg.creationDate || msg.date || ""}`;
+    };
+
     const toggleRow=(id)=>setSelectedRows(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n; });
     const toggleCol=(key)=>setVisibleCols(p=>{ const n=new Set(p); if(n.has(key)&&n.size>3) n.delete(key); else if(n.has(key)&&n.size<=3) showToast("Minimum 3 columns required","error"); else n.add(key); return n; });
 
-    // ── Column resize (drag handle on th right edge) ──────────────────────────
-    // Anti-blink: touches DOM directly during drag, commits to state on mouseup
     const handleColResizeStart = useCallback((e, colKey, thEl) => {
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         const startW = thEl.offsetWidth;
         colResizingRef.current = { key: colKey, startX: e.clientX, startW, thEl };
         document.body.style.userSelect = "none";
@@ -1370,12 +1388,8 @@ function Search() {
         setColWidths(prev => { const n = {...prev}; delete n[colKey]; return n; });
     }, []);
 
-    // For fixed mode: auto-hide columns where NO result row has a value.
-    // The 5 identity columns (seq, format, type, date, time) are always shown.
-    // User can still override via the Columns toggle manager.
     const ALWAYS_VISIBLE_COLS = new Set(["sequenceNumber","format","type","date","time"]);
 
-    // Merge dynamic columns from backend field-config (showInTable=true fields not in static COLUMNS)
     const allColumns = useMemo(()=>{
         if (!dynFieldsLoaded || dynamicFields.length === 0) return COLUMNS;
         const staticKeys = new Set(COLUMNS.map(c=>c.key));
@@ -1385,7 +1399,6 @@ function Search() {
         return [...COLUMNS, ...extraCols];
     }, [dynFieldsLoaded, dynamicFields]);
 
-    // For fixed mode: auto-hide columns where NO result row has a value.
     const autoVisibleCols = useMemo(()=>{
         if (searchMode !== "fixed" || result.length === 0) return new Set(allColumns.map(c=>c.key));
         const hasValue = new Set();
@@ -1427,7 +1440,7 @@ function Search() {
         handleSearch(page-1);
     };
 
-    // ── Export ────────────────────────────────────────────────────────────────
+    // ── Export ───────────────────────────────────────────────────────────────
     const fetchAllRows = async () => {
         const params = buildParams(searchState, 0, serverTotal > 0 ? serverTotal : 10000);
         const res = await fetch(`${API_BASE_URL}?${params.toString()}`, { headers: authHeaders() });
@@ -1454,12 +1467,10 @@ function Search() {
         } else {
             rows = getExportRows(scope);
         }
-
         const getCellVal = (c, msg) =>
             c.key === "format" ? getDisplayFormat(msg) :
             c.key === "type"   ? getDisplayType(msg)   :
             (msg[c.key] != null ? String(msg[c.key]) : "");
-
         if (format === "csv") {
             const header = shownCols.map(c => c.label).join(",");
             const body   = rows.map(msg => shownCols.map(c => '"' + getCellVal(c, msg) + '"').join(",")).join("\n");
@@ -1467,25 +1478,20 @@ function Search() {
             const url    = URL.createObjectURL(blob);
             const a      = document.createElement("a"); a.href = url; a.download = "swift_messages.csv"; a.click();
             URL.revokeObjectURL(url);
-            showToast(`Exported ${rows.length.toLocaleString()} row${rows.length !== 1 ? "s" : ""} as CSV`);
+            showToast(`Exported ${rows.length.toLocaleString()} rows as CSV`);
         } else if (format === "json") {
-            const enriched = rows.map(msg => ({ ...msg, format: getDisplayFormat(msg) }));
-            const blob     = new Blob([JSON.stringify(enriched, null, 2)], { type: "application/json" });
-            const url      = URL.createObjectURL(blob);
-            const a        = document.createElement("a"); a.href = url; a.download = "swift_messages.json"; a.click();
+            const blob = new Blob([JSON.stringify(rows.map(msg => ({ ...msg, format: getDisplayFormat(msg) })), null, 2)], { type: "application/json" });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement("a"); a.href = url; a.download = "swift_messages.json"; a.click();
             URL.revokeObjectURL(url);
-            showToast(`Exported ${rows.length.toLocaleString()} row${rows.length !== 1 ? "s" : ""} as JSON`);
+            showToast(`Exported ${rows.length.toLocaleString()} rows as JSON`);
         } else if (format === "excel") {
             const doExport = (XLSX) => {
-                const getCellValNum = (c, msg) =>
-                    c.key === "format" ? getDisplayFormat(msg) :
-                    c.key === "type"   ? getDisplayType(msg)   :
-                    (msg[c.key] != null ? msg[c.key] : "");
-                const wsData = [shownCols.map(c => c.label), ...rows.map(msg => shownCols.map(c => getCellValNum(c, msg)))];
+                const wsData = [shownCols.map(c => c.label), ...rows.map(msg => shownCols.map(c => msg[c.key] != null ? msg[c.key] : ""))];
                 const ws = XLSX.utils.aoa_to_sheet(wsData); ws["!cols"] = shownCols.map(() => ({ wch: 20 }));
                 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "SWIFT Messages");
                 XLSX.writeFile(wb, "swift_messages.xlsx");
-                showToast(`Exported ${rows.length.toLocaleString()} row${rows.length !== 1 ? "s" : ""} as Excel`);
+                showToast(`Exported ${rows.length.toLocaleString()} rows as Excel`);
             };
             if (window.XLSX) { doExport(window.XLSX); }
             else {
@@ -1513,26 +1519,19 @@ function Search() {
         if(col.key==="amount")           { if(value===undefined||value===null)return "—"; return Number(value).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
         if(col.key==="direction")        return <span className={`dir-badge ${dirClass(value)}`}>{formatDirection(value)}</span>;
         if(col.key==="sequenceNumber")   return <span style={{fontFamily:"var(--mono)",fontWeight:600}}>{value??"—"}</span>;
-        // ── Boolean fields — false is valid data, must not be treated as empty ──
         if(col.key==="possibleDuplicate"||col.key==="crossBorder") {
             if(value===true)  return <span style={{color:"var(--danger,#e24b4a)",fontWeight:600,fontSize:12}}>YES</span>;
             if(value===false) return <span style={{color:"var(--ok,#22c55e)",fontWeight:500,fontSize:12}}>NO</span>;
             return "—";
         }
-        // ── AML status badge ───────────────────────────────────────────────────
         if(col.key==="amlStatus") {
             if(!value) return "—";
-            const color = value==="CLEAR"||value==="CLEAN" ? "var(--ok,#22c55e)"
-                        : value==="FLAGGED"||value==="HIGH" ? "var(--danger,#e24b4a)"
-                        : "var(--warn,#f97316)";
+            const color = value==="CLEAR"||value==="CLEAN" ? "var(--ok,#22c55e)" : value==="FLAGGED"||value==="HIGH" ? "var(--danger,#e24b4a)" : "var(--warn,#f97316)";
             return <span style={{color,fontWeight:600,fontSize:12}}>{value}</span>;
         }
-        // ── Network status badge ───────────────────────────────────────────────
         if(col.key==="networkStatus") {
             if(!value) return "—";
-            const color = value==="DELIVERED" ? "var(--ok,#22c55e)"
-                        : value==="FAILED"    ? "var(--danger,#e24b4a)"
-                        : "var(--warn,#f97316)";
+            const color = value==="DELIVERED" ? "var(--ok,#22c55e)" : value==="FAILED" ? "var(--danger,#e24b4a)" : "var(--warn,#f97316)";
             return <span style={{color,fontWeight:600,fontSize:12}}>{value}</span>;
         }
         if(value===null||value===undefined) return "—";
@@ -1543,133 +1542,60 @@ function Search() {
     const activeFilterCount=Object.values(searchState).filter(v=>v!=="").length;
     const extraWidth=180+(shownCols.length>7?(shownCols.length-7)*130:0);
     const scopeTabs=[{key:"all",label:"All",count:serverTotal},{key:"page",label:"This Page",count:currentRecords.length},{key:"selected",label:"Selected",count:selectedRows.size}];
-    // isFirstMsg/isLastMsg handled per-modal in multi-window system
 
-    // ── Advanced field renderer ────────────────────────────────────────────────
+    // ── Advanced field renderer ───────────────────────────────────────────────
     const renderAdvancedField = (fieldKey) => {
-        // First look in dynamic fields (from backend), then fall back to static
         const def = activeFieldDefs.find(f=>f.key===fieldKey) || FIELD_DEFINITIONS.find(f=>f.key===fieldKey);
         if (!def) return null;
-
         const fieldContent = () => {
             switch(def.type) {
                 case "select": {
-                    // _backendOpts = options pre-loaded from /api/search/field-config
-                    // def.options  = static inline options (true/false booleans)
-                    // def.optKey   = key into local opts state (legacy static fields)
                     const selectOpts = def.options || def._backendOpts || (def.optKey ? opts[def.optKey] || [] : []);
                     const isStatic   = !!(def.options || def._backendOpts);
-                    return (
-                        <DynSelect
-                            value={searchState[def.stateKeys[0]] || ""}
-                            onChange={set(def.stateKeys[0])}
-                            placeholder={def.placeholder}
-                            options={selectOpts}
-                            loading={isStatic ? false : optsLoading}
-                        />
-                    );
+                    return <DynSelect value={searchState[def.stateKeys[0]] || ""} onChange={set(def.stateKeys[0])} placeholder={def.placeholder} options={selectOpts} loading={isStatic ? false : optsLoading}/>;
                 }
                 case "select-type":
-                    return (
-                        <DynSelect
-                            value={searchState.type}
-                            onChange={set("type")}
-                            placeholder="All Types"
-                            options={typeOptions}
-                            loading={optsLoading}
-                        />
-                    );
+                    return <DynSelect value={searchState.type} onChange={set("type")} placeholder="All Types" options={typeOptions} loading={optsLoading}/>;
                 case "date-range":
                     return (
                         <div className="adv-date-range-wrap">
-                            <DateTimePicker
-                                label="From"
-                                dateValue={searchState.startDate}
-                                timeValue={searchState.startTime}
-                                onDateChange={v=>{
-                                    setField("startDate", v);
-                                    if (v) {
-                                        const autoEnd = addOneMonth(v);
-                                        if (!searchState.endDate || searchState.endDate > autoEnd) {
-                                            setField("endDate", autoEnd);
-                                        }
-                                    }
-                                }}
-                                onTimeChange={v=>setField("startTime",v)}
-                                onKeyDown={handleKeyDown}
-                            />
+                            <DateTimePicker label="From" dateValue={searchState.startDate} timeValue={searchState.startTime}
+                                onDateChange={v=>{ setField("startDate", v); if(v){ const autoEnd=addOneMonth(v); if(!searchState.endDate||searchState.endDate>autoEnd) setField("endDate",autoEnd); } }}
+                                onTimeChange={v=>setField("startTime",v)} onKeyDown={handleKeyDown}/>
                             <span className="adv-date-sep">→</span>
-                            <DateTimePicker
-                                label="To"
-                                dateValue={searchState.endDate}
-                                timeValue={searchState.endTime}
-                                onDateChange={v=>{
-                                    const clamped = clampToOneMonth(searchState.startDate, v);
-                                    setField("endDate", clamped);
-                                    if (clamped !== v) showToast("Max range is 1 month from start date", "error");
-                                }}
-                                onTimeChange={v=>setField("endTime",v)}
-                                onKeyDown={handleKeyDown}
-                            />
+                            <DateTimePicker label="To" dateValue={searchState.endDate} timeValue={searchState.endTime}
+                                onDateChange={v=>{ const clamped=clampToOneMonth(searchState.startDate,v); setField("endDate",clamped); if(clamped!==v) showToast("Max range is 1 month","error"); }}
+                                onTimeChange={v=>setField("endTime",v)} onKeyDown={handleKeyDown}/>
                         </div>
                     );
                 case "date-range2": {
-                    // Generic date range for valueDateFrom/To, settlementDateFrom/To etc.
-                    const fromKey = def.stateKeys[0];
-                    const toKey   = def.stateKeys[1];
+                    const fromKey=def.stateKeys[0], toKey=def.stateKeys[1];
                     return (
                         <div className="adv-date-range-wrap">
-                            <DateTimePicker
-                                label="From"
-                                dateValue={searchState[fromKey]}
-                                timeValue=""
-                                onDateChange={v=>setField(fromKey, v)}
-                                onTimeChange={()=>{}}
-                                onKeyDown={handleKeyDown}
-                            />
+                            <DateTimePicker label="From" dateValue={searchState[fromKey]} timeValue="" onDateChange={v=>setField(fromKey,v)} onTimeChange={()=>{}} onKeyDown={handleKeyDown}/>
                             <span className="adv-date-sep">→</span>
-                            <DateTimePicker
-                                label="To"
-                                dateValue={searchState[toKey]}
-                                timeValue=""
-                                onDateChange={v=>setField(toKey, v)}
-                                onTimeChange={()=>{}}
-                                onKeyDown={handleKeyDown}
-                            />
+                            <DateTimePicker label="To" dateValue={searchState[toKey]} timeValue="" onDateChange={v=>setField(toKey,v)} onTimeChange={()=>{}} onKeyDown={handleKeyDown}/>
                         </div>
                     );
                 }
                 case "amount-range":
-                    return (
-                        <div className="adv-range-wrap">
-                            <input type="number" placeholder="Min Amount" value={searchState.amountFrom} onChange={set("amountFrom")} onKeyDown={handleKeyDown}/>
-                            <span className="adv-range-sep">—</span>
-                            <input type="number" placeholder="Max Amount" value={searchState.amountTo} onChange={set("amountTo")} onKeyDown={handleKeyDown}/>
-                        </div>
-                    );
+                    return <div className="adv-range-wrap"><input type="number" placeholder="Min Amount" value={searchState.amountFrom} onChange={set("amountFrom")} onKeyDown={handleKeyDown}/><span className="adv-range-sep">—</span><input type="number" placeholder="Max Amount" value={searchState.amountTo} onChange={set("amountTo")} onKeyDown={handleKeyDown}/></div>;
                 case "seq-range":
-                    return (
-                        <div className="adv-range-wrap">
-                            <input type="number" placeholder="e.g. 1" value={searchState.seqFrom} onChange={set("seqFrom")} onKeyDown={handleKeyDown}/>
-                            <span className="adv-range-sep">—</span>
-                            <input type="number" placeholder="e.g. 9999" value={searchState.seqTo} onChange={set("seqTo")} onKeyDown={handleKeyDown}/>
-                        </div>
-                    );
+                    return <div className="adv-range-wrap"><input type="number" placeholder="e.g. 1" value={searchState.seqFrom} onChange={set("seqFrom")} onKeyDown={handleKeyDown}/><span className="adv-range-sep">—</span><input type="number" placeholder="e.g. 9999" value={searchState.seqTo} onChange={set("seqTo")} onKeyDown={handleKeyDown}/></div>;
                 case "text-wide":
                     return <input className="input-wide" placeholder={def.placeholder} value={searchState[def.stateKeys[0]]} onChange={set(def.stateKeys[0])} onKeyDown={handleKeyDown}/>;
                 default:
                     return <input placeholder={def.placeholder} value={searchState[def.stateKeys[0]]} onChange={set(def.stateKeys[0])} onKeyDown={handleKeyDown}/>;
             }
         };
-
         return (
             <div key={fieldKey} className="adv-field-card">
                 <div className="adv-field-header">
                     <span className="adv-field-label">{def.label}</span>
                     {fieldKey !== "dateRange" && (
-                    <button className="adv-field-remove" onClick={()=>removeAdvancedField(fieldKey)} title="Remove field">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    </button>
+                        <button className="adv-field-remove" onClick={()=>removeAdvancedField(fieldKey)} title="Remove field">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
                     )}
                 </div>
                 <div className="adv-field-input">{fieldContent()}</div>
@@ -1677,10 +1603,6 @@ function Search() {
         );
     };
 
-
-
-
-    // ── Field picker lists — depend on activeFieldDefs (declared above) ─────────
     const filteredFieldDefs = activeFieldDefs.filter(f=>
         f.key !== "dateRange" &&
         !advancedFields.includes(f.key) &&
@@ -1699,20 +1621,11 @@ function Search() {
         return acc;
     },{});
 
-    // ══════════════════════════════════════════════════════════════════
-    // MULTI-WINDOW MODAL SYSTEM
-    // ══════════════════════════════════════════════════════════════════
-
-    // Notify shell-app TabBar to lock/unlock tab switching
-    const hasModals = openModals.length > 0;
+    // ── Multi-window modal system ────────────────────────────────────────────
     useEffect(() => {
-        window.dispatchEvent(
-            new CustomEvent("swift:modalsOpen", { detail: { open: openModals.length > 0 } })
-        );
+        window.dispatchEvent(new CustomEvent("swift:modalsOpen", { detail: { open: openModals.length > 0 } }));
     }, [openModals.length]);
 
-    // Bring modal to front
-    // Called only on mouseup to sync DOM z-index back to React state
     const bringToFront = useCallback((id, z) => {
         if (z) topZRef.current = Math.max(topZRef.current, z);
         else   topZRef.current += 1;
@@ -1720,70 +1633,73 @@ function Search() {
         setOpenModals(ms => ms.map(m => m.id === id ? { ...m, zIndex: finalZ } : m));
     }, []);
 
-    // Open a new popup - each click on a different ref opens a new window
+    // Tracks open msgKeys synchronously — prevents rapid double-clicks slipping through
+    // before React commits the state update
+    const openedKeysRef = useRef(new Set());
+
     const openModal = (msg, e, absIdx) => {
         e.stopPropagation();
 
-        // ── Duplicate prevention: if this exact message is already open, just focus it ──
-        const msgKey = getMsgId(msg);
-        const existing = openModals.find(m => getMsgId(m.msg) === msgKey);
-        if (existing) {
-            // Flash/focus the already-open window instead of opening a new one
-            topZRef.current += 1;
-            setOpenModals(ms => ms.map(m =>
-                m.id === existing.id
-                    ? { ...m, zIndex: topZRef.current, _flash: (m._flash || 0) + 1 }
-                    : m
-            ));
+        // Build a stable, unique key for this message
+        const msgKey = String(
+            msg.id ||
+            msg.transactionReference ||
+            msg.reference ||
+            msg.mur || msg.userReference ||
+            `${msg.sequenceNumber}-${msg.date||""}-${msg.sender||""}-${msg.receiver||""}`
+        );
+
+        // Check synchronously — openedKeysRef is updated immediately
+        if (openedKeysRef.current.has(msgKey)) {
+            // Already open — bring to front + flash
+            setOpenModals(ms => {
+                const existing = ms.find(m => m.msgKey === msgKey);
+                if (!existing) return ms;
+                topZRef.current += 1;
+                return ms.map(m =>
+                    m.id === existing.id
+                        ? { ...m, zIndex: topZRef.current, _flash: (m._flash || 0) + 1 }
+                        : m
+                );
+            });
             return;
         }
 
-        const id    = ++modalIdRef.current;
-        const count = openModals.length;
-        const vw    = window.innerWidth;
-        const vh    = window.innerHeight;
-        const w     = Math.min(880, vw - 80);
-        const h     = Math.min(680, vh - 80);
-        const off   = (count % 8) * 30;
-        const x     = Math.max(20, Math.min(vw - w - 20, (vw - w) / 2 + off));
-        const y     = Math.max(20, Math.min(vh - h - 20, (vh - h) / 2 + off));
+        // Mark as open immediately (sync) before state update
+        openedKeysRef.current.add(msgKey);
+
+        const id = ++modalIdRef.current;
+        const count = openedKeysRef.current.size - 1; // -1 because we just added
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const w = Math.min(880, vw - 80), h = Math.min(680, vh - 80);
+        const off = (count % 8) * 30;
+        const x = Math.max(20, Math.min(vw - w - 20, (vw - w) / 2 + off));
+        const y = Math.max(20, Math.min(vh - h - 20, (vh - h) / 2 + off));
         topZRef.current += 1;
-        setOpenModals(ms => [...ms, {
-            id, msg, tab: "header",
-            pos: { x, y }, size: { w, h },
-            zIndex: topZRef.current, index: absIdx
-        }]);
+        setOpenModals(ms => [...ms, { id, msg, msgKey, tab: "header", pos: { x, y }, size: { w, h }, zIndex: topZRef.current, index: absIdx }]);
     };
 
-    const closeModal     = (id) => setOpenModals(ms => ms.filter(m => m.id !== id));
-    const closeAllModals = ()    => setOpenModals([]);
+    const closeModal = (id) => {
+        setOpenModals(ms => {
+            const modal = ms.find(m => m.id === id);
+            if (modal) openedKeysRef.current.delete(modal.msgKey);
+            return ms.filter(m => m.id !== id);
+        });
+    };
+    const closeAllModals = () => {
+        openedKeysRef.current.clear();
+        setOpenModals([]);
+    };
+    const patchModal = useCallback((id, patch) => setOpenModals(ms => ms.map(m => m.id === id ? { ...m, ...patch } : m)), []);
+    const goModalPrev = useCallback((id) => setOpenModals(ms => ms.map(m => { if(m.id!==id||m.index<=0)return m; return {...m,msg:processed[m.index-1],index:m.index-1,tab:"header"}; })), [processed]);
+    const goModalNext = useCallback((id) => setOpenModals(ms => ms.map(m => { if(m.id!==id||m.index>=processed.length-1)return m; return {...m,msg:processed[m.index+1],index:m.index+1,tab:"header"}; })), [processed]);
 
-    // Used for tab changes and committing drag/resize on mouseup
-    const patchModal = useCallback((id, patch) =>
-        setOpenModals(ms => ms.map(m => m.id === id ? { ...m, ...patch } : m))
-    , []);
-
-    const goModalPrev = useCallback((id) =>
-        setOpenModals(ms => ms.map(m => {
-            if (m.id !== id || m.index <= 0) return m;
-            return { ...m, msg: processed[m.index - 1], index: m.index - 1, tab: "header" };
-        }))
-    , [processed]);
-
-    const goModalNext = useCallback((id) =>
-        setOpenModals(ms => ms.map(m => {
-            if (m.id !== id || m.index >= processed.length - 1) return m;
-            return { ...m, msg: processed[m.index + 1], index: m.index + 1, tab: "header" };
-        }))
-    , [processed]);
-
-    // ── Render ────────────────────────────────────────────────────────────────
+    // ── Render ───────────────────────────────────────────────────────────────
     return (
         <div className="container">
             {toastMsg&&<div className={`toast toast-${toastMsg.type}`}><span>{toastMsg.msg}</span></div>}
-
             {isFetching&&<div style={{padding:"10px 16px",background:"var(--accent-light)",borderRadius:6,marginBottom:8,fontSize:13,color:"var(--accent)",display:"flex",alignItems:"center",gap:8}}><span className="spinner" style={{borderTopColor:"var(--accent)"}}/>Loading messages from backend...</div>}
-            {fetchError &&<div style={{padding:"10px 16px",background:"var(--danger-light)",borderRadius:6,marginBottom:8,fontSize:13,color:"var(--danger)",border:"1px solid var(--danger-border)"}}>⚠ Backend error: {fetchError}. Make sure Spring Boot is running on http://localhost:8080</div>}
+            {fetchError &&<div style={{padding:"10px 16px",background:"var(--danger-light)",borderRadius:6,marginBottom:8,fontSize:13,color:"var(--danger)",border:"1px solid var(--danger-border)"}}>&#x26A0; Backend error: {fetchError}. Make sure Spring Boot is running on http://localhost:8080</div>}
 
             {/* ── Header bar ── */}
             <div className="app-header">
@@ -1797,15 +1713,295 @@ function Search() {
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                             Advanced
                         </button>
+                        <button className={`mode-btn${searchMode==="rawcopies"?" mode-btn-active":""}`} onClick={()=>handleModeSwitch("rawcopies")}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+                            Raw Copies
+                        </button>
                     </div>
-                    {savedSearches.length>0&&<button className="hdr-btn" onClick={()=>setShowSavedPanel(!showSavedPanel)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>Saved ({savedSearches.length})</button>}
-                    <button className="hdr-btn" onClick={saveSearch}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Search</button>
+                    {searchMode !== "rawcopies" && savedSearches.length > 0 && (
+                        <button className="hdr-btn" onClick={()=>setShowSavedPanel(!showSavedPanel)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
+                            Saved ({savedSearches.length})
+                        </button>
+                    )}
+                    {searchMode !== "rawcopies" && (
+                        <button className="hdr-btn" onClick={saveSearch}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Save Search
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {showSavedPanel&&<div className="saved-panel"><div className="saved-panel-header"><span>Saved Searches</span><button className="icon-btn" onClick={()=>setShowSavedPanel(false)}>✕</button></div>{savedSearches.map((s,i)=>(<div key={i} className="saved-item"><span className="saved-name">{s.name}</span><span className="saved-ts">{new Date(s.ts).toLocaleDateString()}</span><button className="pg-btn" onClick={()=>loadSearch(s)}>Load</button><button className="icon-btn danger-btn" onClick={()=>deleteSearch(i)}>✕</button></div>))}</div>}
+            {showSavedPanel&&<div className="saved-panel"><div className="saved-panel-header"><span>Saved Searches</span><button className="icon-btn" onClick={()=>setShowSavedPanel(false)}>&#x2715;</button></div>{savedSearches.map((s,i)=>(<div key={i} className="saved-item"><span className="saved-name">{s.name}</span><span className="saved-ts">{new Date(s.ts).toLocaleDateString()}</span><button className="pg-btn" onClick={()=>loadSearch(s)}>Load</button><button className="icon-btn danger-btn" onClick={()=>deleteSearch(i)}>&#x2715;</button></div>))}</div>}
 
-            {/* ── Fixed Search Panel ── */}
+            {/* ══════════ RAW COPIES MODE ══════════ */}
+            {searchMode === "rawcopies" && (<>
+                <div className="rc-panel">
+                    <div className="rc-panel-title" onClick={() => setRcPanelCollapsed(p => !p)}>
+                        <div className="rc-panel-title-left">
+                            <span>Raw Copies Search</span>
+                            <span className="rc-mode-chip">
+                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                amp_raw_copies
+                            </span>
+                            {rcTotal > 0 && <span className="filter-badge">{rcTotal.toLocaleString()} found</span>}
+                        </div>
+                        <span className="collapse-icon">{rcPanelCollapsed ? "▼ Expand" : "▲ Collapse"}</span>
+                    </div>
+                    {!rcPanelCollapsed && (
+                        <div className="rc-grid">
+                            <div className="rc-field"><label>Message Reference</label><input placeholder="e.g. KCRJ48066072DGTF" value={rcFilters.messageReference} onChange={setRcField("messageReference")} onKeyDown={handleRcKey}/></div>
+                            <div className="rc-field"><label>Message ID</label><input placeholder="Internal message ID" value={rcFilters.messageId} onChange={setRcField("messageId")} onKeyDown={handleRcKey}/></div>
+                            <div className="rc-field"><label>Sender BIC</label><input placeholder="e.g. ABNANL2AXXX" value={rcFilters.sender} onChange={setRcField("sender")} onKeyDown={handleRcKey}/></div>
+                            <div className="rc-field"><label>Receiver BIC</label><input placeholder="e.g. RBOSGB2LXXX" value={rcFilters.receiver} onChange={setRcField("receiver")} onKeyDown={handleRcKey}/></div>
+                            <div className="rc-field"><label>Message Type</label>
+                                <select value={rcFilters.messageTypeCode} onChange={setRcField("messageTypeCode")} onKeyDown={handleRcKey} disabled={rcOptsLoading}>
+                                    <option value="">{rcOptsLoading ? "Loading…" : "All Types"}</option>
+                                    {(rcOpts.messageTypeCodes || []).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div className="rc-field"><label>Direction</label>
+                                <select value={rcFilters.direction} onChange={setRcField("direction")} onKeyDown={handleRcKey} disabled={rcOptsLoading}>
+                                    <option value="">{rcOptsLoading ? "Loading…" : "All Directions"}</option>
+                                    {(rcOpts.directions || []).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div className="rc-field"><label>Status</label>
+                                <select value={rcFilters.currentStatus} onChange={setRcField("currentStatus")} onKeyDown={handleRcKey} disabled={rcOptsLoading}>
+                                    <option value="">{rcOptsLoading ? "Loading…" : "All Statuses"}</option>
+                                    {(rcOpts.statuses || []).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div className="rc-field"><label>Protocol</label>
+                                <select value={rcFilters.protocol} onChange={setRcField("protocol")} onKeyDown={handleRcKey} disabled={rcOptsLoading}>
+                                    <option value="">{rcOptsLoading ? "Loading…" : "All Protocols"}</option>
+                                    {(rcOpts.protocols || []).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div className="rc-field"><label>Input Type</label>
+                                <select value={rcFilters.inputType} onChange={setRcField("inputType")} onKeyDown={handleRcKey} disabled={rcOptsLoading}>
+                                    <option value="">{rcOptsLoading ? "Loading…" : "All Types"}</option>
+                                    {(rcOpts.inputTypes || []).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div className="rc-field"><label>Source</label>
+                                <select value={rcFilters.source} onChange={setRcField("source")} onKeyDown={handleRcKey} disabled={rcOptsLoading}>
+                                    <option value="">{rcOptsLoading ? "Loading…" : "All Sources"}</option>
+                                    {(rcOpts.sources || []).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div className="rc-field"><label>Received From</label><input type="date" value={rcFilters.startDate} onChange={setRcField("startDate")} onKeyDown={handleRcKey}/></div>
+                            <div className="rc-field"><label>Received To</label><input type="date" value={rcFilters.endDate} onChange={setRcField("endDate")} onKeyDown={handleRcKey}/></div>
+                            <div className="rc-field"><label>Duplicate</label>
+                                <select value={rcFilters.isDuplicate} onChange={setRcField("isDuplicate")} onKeyDown={handleRcKey}>
+                                    <option value="">All</option>
+                                    <option value="true">Duplicates only</option>
+                                    <option value="false">Non-duplicates only</option>
+                                </select>
+                            </div>
+                            <div className="rc-field rc-field-wide"><label>Free Search (across reference, sender, receiver, raw content)</label>
+                                <input placeholder="Search across all fields…" value={rcFilters.freeText} onChange={setRcField("freeText")} onKeyDown={handleRcKey}/>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="action-bar">
+                    <div className="action-left">
+                        <button className={`search-btn${rcLoading ? " btn-loading" : ""}`} onClick={() => doRcSearch(0)} disabled={rcLoading}>
+                            {rcLoading ? <><span className="spinner"/>Searching…</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>Search Raw Copies</>}
+                        </button>
+                        <button className="clear-btn" onClick={handleRcReset}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Reset
+                        </button>
+                    </div>
+                    <div className="action-hint">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                        Click a row to expand raw XML &#xB7; Grouped by Message Reference
+                    </div>
+                </div>
+
+                {rcError && <div style={{padding:"10px 16px",background:"var(--danger-light)",borderRadius:6,marginBottom:8,fontSize:13,color:"var(--danger)",border:"1px solid var(--danger-border)"}}>&#x26A0; {rcError}</div>}
+
+                {rcSearched && (<>
+                    {rcResults.length > 0 && (
+                        <div className="rc-stats-bar">
+                            <div className="rc-stat"><span className="rc-stat-value">{rcTotal.toLocaleString()}</span><span className="rc-stat-label">Total Raw Copies</span></div>
+                            <div className="rc-stat"><span className="rc-stat-value">{rcGrouped.length}</span><span className="rc-stat-label">Unique References</span></div>
+                            <div className="rc-stat rc-stat-dup"><span className="rc-stat-value">{rcDupCount}</span><span className="rc-stat-label">Duplicates</span></div>
+                            <div className="rc-stat rc-stat-ok"><span className="rc-stat-value">{rcOkCount}</span><span className="rc-stat-label">Distributed OK</span></div>
+                        </div>
+                    )}
+
+                    {rcResults.length === 0 ? (
+                        <div className="rc-empty">
+                            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--gray-4)" strokeWidth="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <p>No raw copies found</p><span>Try adjusting your search filters</span>
+                        </div>
+                    ) : (
+                        <div className="rc-table-wrap">
+                            <table className="rc-table">
+                                <thead>
+                                    <tr>
+                                        <th style={{width:36}}/><th style={{width:40}}>#</th>
+                                        <th>Message ID</th><th>Type</th><th>Direction</th>
+                                        <th>Status</th><th>Sender</th><th>Receiver</th>
+                                        <th>Protocol</th><th>Duplicate</th><th>Received At</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rcGrouped.map(([ref, rows]) => (
+                                        <React.Fragment key={ref}>
+                                            <tr className="rc-group-header">
+                                                <td colSpan={11}>
+                                                    <div className="rc-group-ref">
+                                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                                        <span className="rc-group-ref-text">{ref}</span>
+                                                        <span className="rc-group-badge">
+                                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                                            {rows.length} cop{rows.length === 1 ? "y" : "ies"}
+                                                        </span>
+                                                        {rows.some(r => r.isDuplicate) && (
+                                                            <span style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"#fee2e2",padding:"2px 7px",borderRadius:20}}>HAS DUPLICATES</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {rows.map((row, ri) => (
+                                                <React.Fragment key={row.id || ri}>
+                                                    <tr onClick={() => setRcExpandedRow(p => p === row.id ? null : row.id)}
+                                                        style={{background: ri % 2 === 0 ? "var(--white)" : "var(--gray-7)", cursor:"pointer"}}>
+                                                        <td>
+                                                            <button className={`rc-expand-btn${rcExpandedRow === row.id ? " open" : ""}`}
+                                                                onClick={e => { e.stopPropagation(); setRcExpandedRow(p => p === row.id ? null : row.id); }}
+                                                                title="View raw content">
+                                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                                                            </button>
+                                                        </td>
+                                                        <td style={{color:"var(--gray-3)",fontWeight:600,fontSize:12}}>{ri + 1}</td>
+                                                        <td className="rc-mono" style={{fontSize:11}}>{row.messageId ? row.messageId.slice(0,20) + (row.messageId.length > 20 ? "…" : "") : "—"}</td>
+                                                        <td><span style={{fontFamily:"monospace",fontWeight:700,fontSize:12}}>{row.messageTypeCode || "—"}</span></td>
+                                                        <td><span className={rcDirCls(row.direction)}>{row.direction || "—"}</span></td>
+                                                        <td><span className={rcStatusCls(row.currentStatus)}>{row.currentStatus || "—"}</span></td>
+                                                        <td className="rc-mono">{row.senderAddress || "—"}</td>
+                                                        <td className="rc-mono">{row.receiverAddress || "—"}</td>
+                                                        <td style={{fontSize:12}}>{row.protocol || "—"}</td>
+                                                        <td>
+                                                            {row.isDuplicate === true  && <span className="rc-dup-yes">&#x25CF; DUP</span>}
+                                                            {row.isDuplicate === false && <span className="rc-dup-no">&#x25CF; NO</span>}
+                                                            {row.isDuplicate == null   && <span style={{color:"var(--gray-4)"}}>—</span>}
+                                                        </td>
+                                                        <td style={{fontSize:12,whiteSpace:"nowrap"}}>{fmtDate(row.receivedAt || row.ampDateReceived)}</td>
+                                                    </tr>
+                                                    {rcExpandedRow === row.id && (
+                                                        <tr className="rc-raw-row">
+                                                            <td colSpan={11}>
+                                                                <div className="rc-raw-inner">
+                                                                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                                                                        <div>
+                                                                            <div className="rc-raw-label">Raw Input — {row.inputType || "UNKNOWN"} &#xB7; {row.source || "—"}</div>
+                                                                            <div style={{fontSize:10,color:"var(--rc-raw-meta)",marginTop:2}}>
+                                                                                ID: <span style={{fontFamily:"monospace"}}>{row.id}</span>
+                                                                                {row.ampDateReceived && <> &#xB7; AMP received: {fmtDate(row.ampDateReceived)}</>}
+                                                                            </div>
+                                                                        </div>
+                                                                        {row.rawInput && (
+                                                                            <button className={`rc-copy-btn${rcCopiedId === row.id ? " copied" : ""}`}
+                                                                                onClick={e => { e.stopPropagation(); copyRaw(row.id, row.rawInput); }}>
+                                                                                {rcCopiedId === row.id ? "&#x2713; Copied" : "Copy XML"}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    {row.rawInput
+                                                                        ? <pre className="rc-raw-xml">{row.rawInput}</pre>
+                                                                        : <div style={{color:"var(--rc-raw-meta)",fontStyle:"italic",fontSize:13}}>No raw content available</div>
+                                                                    }
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            ))}
+                                        </React.Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* ── PATCHED: Full pagination matching Fixed/Advanced UX ── */}
+                    {rcTotalPages >= 1 && (
+                        <div className="pagination-bar">
+                            <div className="pagination-left">
+                                <span className="record-range">
+                                    Showing <strong>{rcPage * rcRecordsPerPage + 1}&ndash;{Math.min((rcPage + 1) * rcRecordsPerPage, rcTotal)}</strong> of <strong>{rcTotal.toLocaleString()}</strong> records
+                                </span>
+                            </div>
+                            <div className="pagination-center">
+                                <button className="pg-btn pg-edge"
+                                    onClick={() => { setRcStartPage(1); doRcSearch(0); }}
+                                    disabled={rcPage === 0}>&#xAB;&#xAB;</button>
+                                <button className="pg-btn"
+                                    onClick={() => { const p = Math.max(0, rcPage - 1); setRcStartPage(Math.floor(p / rcPagesPerGroup) * rcPagesPerGroup + 1); doRcSearch(p); }}
+                                    disabled={rcPage === 0}>&#x2039; Prev</button>
+                                {rcStartPage > 1 && <span className="pg-ellipsis">…</span>}
+                                {[...Array(rcPagesPerGroup)].map((_, i) => {
+                                    const p = rcStartPage - 1 + i;
+                                    if (p >= rcTotalPages) return null;
+                                    return (
+                                        <button key={p}
+                                            className={`pg-btn pg-num${rcPage === p ? " pg-active" : ""}`}
+                                            onClick={() => { setRcStartPage(Math.floor(p / rcPagesPerGroup) * rcPagesPerGroup + 1); doRcSearch(p); }}>
+                                            {p + 1}
+                                        </button>
+                                    );
+                                })}
+                                {rcStartPage + rcPagesPerGroup - 1 < rcTotalPages && <span className="pg-ellipsis">…</span>}
+                                <button className="pg-btn"
+                                    onClick={() => { const p = Math.min(rcTotalPages - 1, rcPage + 1); setRcStartPage(Math.floor(p / rcPagesPerGroup) * rcPagesPerGroup + 1); doRcSearch(p); }}
+                                    disabled={rcPage >= rcTotalPages - 1}>Next &#x203A;</button>
+                                <button className="pg-btn pg-edge"
+                                    onClick={() => { const p = rcTotalPages - 1; setRcStartPage(Math.floor(p / rcPagesPerGroup) * rcPagesPerGroup + 1); doRcSearch(p); }}
+                                    disabled={rcPage >= rcTotalPages - 1}>&#xBB;&#xBB;</button>
+                            </div>
+                            <div className="pagination-right">
+                                <label className="pg-label">Go to</label>
+                                <input className="pg-goto" type="number" min="1" max={rcTotalPages}
+                                    value={rcGoToPage} placeholder="pg"
+                                    onChange={e => setRcGoToPage(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === "Enter") {
+                                            const p = parseInt(rcGoToPage) - 1;
+                                            if (p >= 0 && p < rcTotalPages) {
+                                                setRcStartPage(Math.floor(p / rcPagesPerGroup) * rcPagesPerGroup + 1);
+                                                doRcSearch(p);
+                                            }
+                                            setRcGoToPage("");
+                                        }
+                                    }}
+                                />
+                                <span className="pg-of-total">of {rcTotalPages}</span>
+                                <span className="pg-divider"/>
+                                <label className="pg-label">Rows</label>
+                                <select className="pg-rows-select" value={rcRecordsPerPage}
+                                    onChange={e => {
+                                        setRcRecordsPerPage(Number(e.target.value));
+                                        setRcPage(0); setRcStartPage(1);
+                                        doRcSearch(0);
+                                    }}>
+                                    <option value={10}>10</option>
+                                    <option value={20}>20</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                            </div>
+                        </div>
+                    )}
+                </>)}
+            </>)}
+
+            {/* ══════════ FIXED SEARCH PANEL ══════════ */}
             {searchMode==="fixed"&&(
                 <div className={`search-panel${panelCollapsed?" panel-collapsed":""}`}>
                     <div className="panel-section-title" onClick={()=>setPanelCollapsed(p=>!p)} style={{cursor:"pointer"}}>
@@ -1814,248 +2010,149 @@ function Search() {
                     </div>
                     {!panelCollapsed&&(<>
                         <div className="row">
-                            <div className="field-group"><label>Message Format</label>
-                                <DynSelect value={searchState.format} onChange={e=>setSearchState(s=>({...s,format:e.target.value,type:"",messageCode:""}))} placeholder="All Formats" options={opts.formats} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>Message Type</label>
-                                <select value={searchState.type} onChange={set("type")} onKeyDown={handleKeyDown}>
-                                    <option value="">All Types</option>
-                                    {typeOptions.map(t=><option key={t} value={t}>{t}</option>)}
-                                </select>
-                            </div>
+                            <div className="field-group"><label>Message Format</label><DynSelect value={searchState.format} onChange={e=>setSearchState(s=>({...s,format:e.target.value,type:"",messageCode:""}))} placeholder="All Formats" options={opts.formats} loading={optsLoading}/></div>
+                            <div className="field-group"><label>Message Type</label><select value={searchState.type} onChange={set("type")} onKeyDown={handleKeyDown}><option value="">All Types</option>{typeOptions.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
                             <DateTimePicker label="Starting Date / Time" dateValue={searchState.startDate} timeValue={searchState.startTime} onDateChange={v=>setField("startDate",v)} onTimeChange={v=>setField("startTime",v)} onKeyDown={handleKeyDown}/>
                             <DateTimePicker label="Ending Date / Time"   dateValue={searchState.endDate}   timeValue={searchState.endTime}   onDateChange={v=>setField("endDate",v)}   onTimeChange={v=>setField("endTime",v)}   onKeyDown={handleKeyDown}/>
-                            <div className="field-group"><label>User Reference (MUR)</label>
-                                <input placeholder="MUR" value={searchState.userReference} onChange={set("userReference")} onKeyDown={handleKeyDown}/>
-                            </div>
+                            <div className="field-group"><label>User Reference (MUR)</label><input placeholder="MUR" value={searchState.userReference} onChange={set("userReference")} onKeyDown={handleKeyDown}/></div>
                         </div>
                         <div className="row">
-                            <div className="field-group"><label>Source System</label>
-                                <DynSelect value={searchState.sourceSystem} onChange={set("sourceSystem")} placeholder="All Systems" options={opts.sourceSystems} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>RFK Reference / UMID</label>
-                                <input placeholder="Enter RFK Reference" value={searchState.rfkReference} onChange={set("rfkReference")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Message Direction</label>
-                                <DynSelect value={searchState.direction} onChange={set("direction")} placeholder="All Directions" options={opts.directions.length?opts.directions:opts.ioDirections} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>Status</label>
-                                <DynSelect value={searchState.status} onChange={set("status")} placeholder="All Status" options={opts.statuses} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>FIN-COPY</label>
-                                <DynSelect value={searchState.finCopy} onChange={set("finCopy")} placeholder="All" options={opts.finCopies} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>Network</label>
-                                <DynSelect value={searchState.network} onChange={set("network")} placeholder="All Networks" options={opts.networks.length?opts.networks:opts.networkProtocols||[]} loading={optsLoading}/>
-                            </div>
+                            <div className="field-group"><label>Source System</label><DynSelect value={searchState.sourceSystem} onChange={set("sourceSystem")} placeholder="All Systems" options={opts.sourceSystems} loading={optsLoading}/></div>
+                            <div className="field-group"><label>RFK Reference / UMID</label><input placeholder="Enter RFK Reference" value={searchState.rfkReference} onChange={set("rfkReference")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Message Direction</label><DynSelect value={searchState.direction} onChange={set("direction")} placeholder="All Directions" options={opts.directions.length?opts.directions:opts.ioDirections} loading={optsLoading}/></div>
+                            <div className="field-group"><label>Status</label><DynSelect value={searchState.status} onChange={set("status")} placeholder="All Status" options={opts.statuses} loading={optsLoading}/></div>
+                            <div className="field-group"><label>FIN-COPY</label><DynSelect value={searchState.finCopy} onChange={set("finCopy")} placeholder="All" options={opts.finCopies} loading={optsLoading}/></div>
+                            <div className="field-group"><label>Network</label><DynSelect value={searchState.network} onChange={set("network")} placeholder="All Networks" options={opts.networks.length?opts.networks:opts.networkProtocols||[]} loading={optsLoading}/></div>
                         </div>
                         <div className="row">
-                            <div className="field-group"><label>Sender BIC</label>
-                                <input placeholder="Enter Sender BIC" value={searchState.sender} onChange={set("sender")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Receiver BIC</label>
-                                <input placeholder="Enter Receiver BIC" value={searchState.receiver} onChange={set("receiver")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Phase</label>
-                                <DynSelect value={searchState.phase} onChange={set("phase")} placeholder="All Phases" options={opts.phases} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>Action</label>
-                                <DynSelect value={searchState.action} onChange={set("action")} placeholder="All Actions" options={opts.actions} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>Reason</label>
-                                <input placeholder="Enter Reason" value={searchState.reason} onChange={set("reason")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Correspondent</label>
-                                <input placeholder="Correspondent" value={searchState.correspondent} onChange={set("correspondent")} onKeyDown={handleKeyDown}/>
-                            </div>
+                            <div className="field-group"><label>Sender BIC</label><input placeholder="Enter Sender BIC" value={searchState.sender} onChange={set("sender")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Receiver BIC</label><input placeholder="Enter Receiver BIC" value={searchState.receiver} onChange={set("receiver")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Phase</label><DynSelect value={searchState.phase} onChange={set("phase")} placeholder="All Phases" options={opts.phases} loading={optsLoading}/></div>
+                            <div className="field-group"><label>Action</label><DynSelect value={searchState.action} onChange={set("action")} placeholder="All Actions" options={opts.actions} loading={optsLoading}/></div>
+                            <div className="field-group"><label>Reason</label><input placeholder="Enter Reason" value={searchState.reason} onChange={set("reason")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Correspondent</label><input placeholder="Correspondent" value={searchState.correspondent} onChange={set("correspondent")} onKeyDown={handleKeyDown}/></div>
                         </div>
                         <div className="row">
-                            <div className="field-group"><label>Amount From</label>
-                                <input type="number" placeholder="Min Amount" value={searchState.amountFrom} onChange={set("amountFrom")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Amount To</label>
-                                <input type="number" placeholder="Max Amount" value={searchState.amountTo} onChange={set("amountTo")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Currency (CCY)</label>
-                                <DynSelect value={searchState.currency} onChange={set("currency")} placeholder="All Currencies" options={opts.currencies} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>Owner / Unit</label>
-                                <DynSelect value={searchState.ownerUnit} onChange={set("ownerUnit")} placeholder="All Units" options={opts.ownerUnits.length?opts.ownerUnits:[]} loading={optsLoading}/>
-                            </div>
-                            <div className="field-group"><label>Message Reference</label>
-                                <input placeholder="Message Reference" value={searchState.messageReference} onChange={set("messageReference")} onKeyDown={handleKeyDown}/>
-                            </div>
+                            <div className="field-group"><label>Amount From</label><input type="number" placeholder="Min Amount" value={searchState.amountFrom} onChange={set("amountFrom")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Amount To</label><input type="number" placeholder="Max Amount" value={searchState.amountTo} onChange={set("amountTo")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Currency (CCY)</label><DynSelect value={searchState.currency} onChange={set("currency")} placeholder="All Currencies" options={opts.currencies} loading={optsLoading}/></div>
+                            <div className="field-group"><label>Owner / Unit</label><DynSelect value={searchState.ownerUnit} onChange={set("ownerUnit")} placeholder="All Units" options={opts.ownerUnits} loading={optsLoading}/></div>
+                            <div className="field-group"><label>Message Reference</label><input placeholder="Message Reference" value={searchState.messageReference} onChange={set("messageReference")} onKeyDown={handleKeyDown}/></div>
                         </div>
                         <div className="row">
-                            <div className="field-group"><label>Seq No. From</label>
-                                <input type="number" placeholder="e.g. 1" value={searchState.seqFrom} onChange={set("seqFrom")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Seq No. To</label>
-                                <input type="number" placeholder="e.g. 9999" value={searchState.seqTo} onChange={set("seqTo")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group field-group-wide"><label>UETR</label>
-                                <input className="input-wide" placeholder="Enter UETR (e.g. 8a562c65-...)" value={searchState.uetr} onChange={set("uetr")} onKeyDown={handleKeyDown}/>
-                            </div>
+                            <div className="field-group"><label>Seq No. From</label><input type="number" placeholder="e.g. 1" value={searchState.seqFrom} onChange={set("seqFrom")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Seq No. To</label><input type="number" placeholder="e.g. 9999" value={searchState.seqTo} onChange={set("seqTo")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group field-group-wide"><label>UETR</label><input className="input-wide" placeholder="Enter UETR (e.g. 8a562c65-...)" value={searchState.uetr} onChange={set("uetr")} onKeyDown={handleKeyDown}/></div>
                         </div>
                         <div className="row" style={{alignItems:"flex-end"}}>
-                            <div className="field-group field-group-wide"><label>Free Search Text</label>
-                                <input className="input-wide" placeholder="Searches across all fields..." value={searchState.freeSearchText} onChange={set("freeSearchText")} onKeyDown={handleKeyDown}/>
-                            </div>
-                            <div className="field-group"><label>Channel / Session</label>
-                                <DynSelect value={searchState.backendChannel} onChange={set("backendChannel")} placeholder="All Channels" options={opts.backendChannels.length?opts.backendChannels:opts.networkChannels} loading={optsLoading}/>
-                            </div>
+                            <div className="field-group field-group-wide"><label>Free Search Text</label><input className="input-wide" placeholder="Searches across all fields..." value={searchState.freeSearchText} onChange={set("freeSearchText")} onKeyDown={handleKeyDown}/></div>
+                            <div className="field-group"><label>Channel / Session</label><DynSelect value={searchState.backendChannel} onChange={set("backendChannel")} placeholder="All Channels" options={opts.backendChannels.length?opts.backendChannels:opts.networkChannels} loading={optsLoading}/></div>
                         </div>
                     </>)}
                 </div>
             )}
 
-            {/* ── Advanced Search Panel ── */}
+            {/* ══════════ ADVANCED SEARCH PANEL ══════════ */}
             {searchMode==="advanced"&&(
                 <div className={`search-panel adv-panel${panelCollapsed?" panel-collapsed":""}`}>
                     <div className="panel-section-title" onClick={()=>setPanelCollapsed(p=>!p)} style={{cursor:"pointer"}}>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
                             <span>Advanced Search</span>
                             {advancedFields.length>0&&<span className="filter-badge">{advancedFields.length} field{advancedFields.length!==1?"s":""}</span>}
-                            <span className="adv-mode-chip">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                                Dynamic
-                            </span>
+                            <span className="adv-mode-chip"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>Dynamic</span>
                         </div>
                         <span className="collapse-icon">{panelCollapsed?"▼ Expand":"▲ Collapse"}</span>
                     </div>
-
-                    {!panelCollapsed&&(
-                        <>
-                            <div className="adv-toolbar">
-                                <div className="adv-picker-wrap" ref={fieldPickerRef}>
-                                    <button className="adv-add-btn" onClick={()=>setShowFieldPicker(p=>!p)}>
-                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                        Add Search Field
-                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{marginLeft:2}}><polyline points="6 9 12 15 18 9"/></svg>
-                                    </button>
-
-                                    {showFieldPicker&&(
-                                        <div className="adv-picker-dropdown">
-                                            <div className="adv-picker-search">
-                                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
-                                                <input placeholder="Search fields..." value={fieldPickerQuery} onChange={e=>setFieldPickerQuery(e.target.value)} autoFocus/>
-                                                {fieldPickerQuery&&<button className="adv-picker-clear" onClick={()=>setFieldPickerQuery("")}>✕</button>}
-                                            </div>
-                                            <div className="adv-picker-body">
-                                                {Object.keys(groupedFields).length===0&&(
-                                                    <div className="adv-picker-empty">
-                                                        {advancedFields.length===FIELD_DEFINITIONS.length?"All fields added":"No fields match"}
-                                                    </div>
-                                                )}
-                                                {Object.entries(groupedFields).map(([group,items])=>(
-                                                    <div key={group} className="adv-picker-group">
-                                                        <div className="adv-picker-group-label">{group}</div>
-                                                        {items.map(f=>(
-                                                            <button key={f.key} className="adv-picker-item" onClick={()=>addAdvancedField(f.key)}>
-                                                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                                                {f.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                ))}
-                                            </div>
+                    {!panelCollapsed&&(<>
+                        <div className="adv-toolbar">
+                            <div className="adv-picker-wrap" ref={fieldPickerRef}>
+                                <button className="adv-add-btn" onClick={()=>setShowFieldPicker(p=>!p)}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    Add Search Field
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{marginLeft:2}}><polyline points="6 9 12 15 18 9"/></svg>
+                                </button>
+                                {showFieldPicker&&(
+                                    <div className="adv-picker-dropdown">
+                                        <div className="adv-picker-search">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
+                                            <input placeholder="Search fields..." value={fieldPickerQuery} onChange={e=>setFieldPickerQuery(e.target.value)} autoFocus/>
+                                            {fieldPickerQuery&&<button className="adv-picker-clear" onClick={()=>setFieldPickerQuery("")}>&#x2715;</button>}
                                         </div>
-                                    )}
-                                </div>
-
-                                {advancedFields.length>0&&(
-                                    <button className="adv-clear-fields-btn" onClick={()=>{setAdvancedFields(["dateRange"]);setSearchState(initialSearchState);}}>
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-                                        Clear all fields
-                                    </button>
+                                        <div className="adv-picker-body">
+                                            {Object.keys(groupedFields).length===0&&<div className="adv-picker-empty">{advancedFields.length===FIELD_DEFINITIONS.length?"All fields added":"No fields match"}</div>}
+                                            {Object.entries(groupedFields).map(([group,items])=>(
+                                                <div key={group} className="adv-picker-group">
+                                                    <div className="adv-picker-group-label">{group}</div>
+                                                    {items.map(f=>(
+                                                        <button key={f.key} className="adv-picker-item" onClick={()=>addAdvancedField(f.key)}>
+                                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                                            {f.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 )}
-
-                                <div className="adv-info-text">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                                    Result table shows only columns for selected fields
-                                </div>
                             </div>
-
-                            <div className="adv-fixed-date-wrap">
-                                {renderAdvancedField("dateRange")}
+                            {advancedFields.length>0&&(<button className="adv-clear-fields-btn" onClick={()=>{setAdvancedFields(["dateRange"]);setSearchState(initialSearchState);}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Clear all fields</button>)}
+                            <div className="adv-info-text"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Result table shows only columns for selected fields</div>
+                        </div>
+                        <div className="adv-fixed-date-wrap">{renderAdvancedField("dateRange")}</div>
+                        {advancedFields.filter(f=>f!=="dateRange").length===0&&(
+                            <div className="adv-empty-state">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--gray-4)" strokeWidth="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/></svg>
+                                <p>No search fields added yet</p><span>Click "Add Search Field" to choose which fields to search on</span>
                             </div>
-
-                            {advancedFields.filter(f=>f!=="dateRange").length===0&&(
-                                <div className="adv-empty-state">
-                                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--gray-4)" strokeWidth="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/></svg>
-                                    <p>No search fields added yet</p>
-                                    <span>Click "Add Search Field" to choose which fields to search on</span>
-                                </div>
-                            )}
-
-                            {advancedFields.filter(f=>f!=="dateRange").length>0&&(
-                                <div className="adv-fields-grid">
-                                    {advancedFields.filter(f=>f!=="dateRange").map(fkey=>renderAdvancedField(fkey))}
-                                </div>
-                            )}
-                        </>
-                    )}
+                        )}
+                        {advancedFields.filter(f=>f!=="dateRange").length>0&&(
+                            <div className="adv-fields-grid">{advancedFields.filter(f=>f!=="dateRange").map(fkey=>renderAdvancedField(fkey))}</div>
+                        )}
+                    </>)}
                 </div>
             )}
 
-            {/* ── Action Bar ── */}
-            <div className="action-bar">
-                <div className="action-left">
-                    <button className={`search-btn${isSearching?" btn-loading":""}`} onClick={handleSearch} disabled={isSearching}>
-                        {isSearching?(<><span className="spinner"/>Searching...</>):(<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>Search</>)}
-                    </button>
-                    <button className="clear-btn" onClick={handleClear}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Reset</button>
+            {/* ── Action Bar (Fixed / Advanced only) ── */}
+            {searchMode !== "rawcopies" && (
+                <div className="action-bar">
+                    <div className="action-left">
+                        <button className={`search-btn${isSearching?" btn-loading":""}`} onClick={handleSearch} disabled={isSearching}>
+                            {isSearching?(<><span className="spinner"/>Searching...</>):(<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>Search</>)}
+                        </button>
+                        <button className="clear-btn" onClick={handleClear}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>Reset</button>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:16}}>
+                        {searchMode==="advanced"&&advancedFields.length>0&&(
+                            <div className="adv-active-fields-strip">{advancedFields.map(fkey=>{ const def=FIELD_DEFINITIONS.find(f=>f.key===fkey); return def?<span key={fkey} className="adv-active-chip">{def.label}</span>:null; })}</div>
+                        )}
+                        <div className="action-hint"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Press Enter in any field to search</div>
+                    </div>
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:16}}>
-                    {searchMode==="advanced"&&advancedFields.length>0&&(
-                        <div className="adv-active-fields-strip">
-                            {advancedFields.map(fkey=>{
-                                const def=FIELD_DEFINITIONS.find(f=>f.key===fkey);
-                                return def?<span key={fkey} className="adv-active-chip">{def.label}</span>:null;
-                            })}
-                        </div>
-                    )}
-                    <div className="action-hint"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Press Enter in any field to search</div>
-                </div>
-            </div>
+            )}
 
-            {/* ── Results ── */}
-            {showResult&&(<>
+            {/* ── Results (Fixed / Advanced only) ── */}
+            {searchMode !== "rawcopies" && showResult&&(<>
                 <div className="stats-row">
                     {summaryStats.map((s,i)=>(<div key={i} className="stat-card" style={{"--stat-color":s.color}}><span className="stat-value">{s.value.toLocaleString()}</span><span className="stat-label">{s.label}</span></div>))}
                     <div className="stats-spacer"/>
-
                     {searchMode==="fixed"&&(
                         <div className="col-manager-wrap" ref={colManagerRef}>
                             <button className="tool-btn" onClick={()=>setShowColManager(p=>!p)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Columns ({shownCols.length}/{allColumns.length})</button>
                             {showColManager&&<div className="col-manager-dropdown"><div className="col-manager-title">Toggle Columns</div><div className="col-manager-grid">{allColumns.map(col=>(<label key={col.key} className="col-toggle-item"><input type="checkbox" checked={visibleCols.has(col.key)} onChange={()=>toggleCol(col.key)}/><span>{col.label}{col.isDynamic&&<span style={{fontSize:9,marginLeft:4,background:"var(--accent-light)",color:"var(--accent)",padding:"1px 5px",borderRadius:3,fontWeight:600}}>NEW</span>}</span></label>))}</div></div>}
                         </div>
                     )}
-
                     {searchMode==="advanced"&&advancedResultCols&&(
-                        <div className="adv-cols-info">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                            {advancedResultCols.length} column{advancedResultCols.length!==1?"s":""} shown
-                        </div>
+                        <div className="adv-cols-info"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>{advancedResultCols.length} column{advancedResultCols.length!==1?"s":""} shown</div>
                     )}
-
                     <div className="export-wrap" ref={exportMenuRef}>
                         <button className="tool-btn tool-btn-primary" onClick={()=>!isExporting&&setShowExportMenu(p=>!p)} disabled={isExporting}>
-                            {isExporting
-                                ? <><span className="spinner" style={{borderTopColor:"var(--accent)",borderColor:"var(--accent-mid)"}}/>Exporting…</>
-                                : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg></>
-                            }
+                            {isExporting?<><span className="spinner" style={{borderTopColor:"var(--accent)",borderColor:"var(--accent-mid)"}}/>Exporting…</>:<><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg></>}
                         </button>
                         {showExportMenu&&<div className="export-dropdown">
                             <div className="export-scope-section"><div className="export-scope-header"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Export Scope</div>
                             <div className="export-scope-tabs">{scopeTabs.map(s=>{
                                 const isDisabled = s.key==="selected" && selectedRows.size===0;
-                                return (
-                                    <button key={s.key} className={`export-scope-tab${exportScope===s.key?" export-scope-active":""}`} style={isDisabled?{opacity:0.4,cursor:"not-allowed",pointerEvents:"all"}:{}} onClick={()=>{ if(isDisabled){ showToast("No rows selected. Click rows in the table to select them.","error"); return; } setExportScope(s.key); }} title={isDisabled?"Select rows in the table first":undefined}>
-                                        <span className="scope-tab-label">{s.label}</span>
-                                        <span className="scope-tab-count">{typeof s.count==="number"?s.count.toLocaleString():s.count}</span>
-                                    </button>
-                                );
+                                return <button key={s.key} className={`export-scope-tab${exportScope===s.key?" export-scope-active":""}`} style={isDisabled?{opacity:0.4,cursor:"not-allowed",pointerEvents:"all"}:{}} onClick={()=>{ if(isDisabled){ showToast("No rows selected","error"); return; } setExportScope(s.key); }} title={isDisabled?"Select rows first":undefined}><span className="scope-tab-label">{s.label}</span><span className="scope-tab-count">{typeof s.count==="number"?s.count.toLocaleString():s.count}</span></button>;
                             })}</div></div>
                             <div className="export-format-divider"><span>Format</span></div>
                             <button className="export-opt" onClick={()=>runExport(exportScope,"csv")}><span className="export-opt-icon export-icon-csv">CSV</span><span className="export-opt-info"><span className="export-opt-name">Comma Separated</span><span className="export-opt-ext">.csv</span></span></button>
@@ -2065,7 +2162,7 @@ function Search() {
                     </div>
                 </div>
 
-                {Object.keys(colFilters).some(k=>colFilters[k])&&<div className="active-filters-bar"><span className="af-label">Table filters:</span>{Object.entries(colFilters).filter(([,v])=>v).map(([k,v])=>(<span key={k} className="af-chip">{allColumns.find(c=>c.key===k)?.label}: {v}<button className="af-remove" onClick={()=>handleColFilter(k,"")}>✕</button></span>))}<button className="af-clear-all" onClick={()=>setColFilters({})}>Clear all</button></div>}
+                {Object.keys(colFilters).some(k=>colFilters[k])&&<div className="active-filters-bar"><span className="af-label">Table filters:</span>{Object.entries(colFilters).filter(([,v])=>v).map(([k,v])=>(<span key={k} className="af-chip">{allColumns.find(c=>c.key===k)?.label}: {v}<button className="af-remove" onClick={()=>handleColFilter(k,"")}>&#x2715;</button></span>))}<button className="af-clear-all" onClick={()=>setColFilters({})}>Clear all</button></div>}
 
                 <div className="table-wrapper" ref={tableWrapperRef} onScroll={syncScroll}>
                     <table style={{width:`calc(100% + ${extraWidth}px)`,minWidth:`calc(100% + ${extraWidth}px)`}}>
@@ -2073,29 +2170,18 @@ function Search() {
                             <th className="row-num-th">#</th>
                             <th className="ref-th">Reference</th>
                             {shownCols.map(col=>{
-                                const cw = colWidths[col.key];
+                                const cw=colWidths[col.key];
                                 return (
-                                <th key={col.key}
-                                    className={activeCol===col.key?"active-col":""}
-                                    style={cw ? {width:cw,minWidth:cw,maxWidth:cw} : {}}
-                                    onClick={()=>setActiveCol(p=>p===col.key?null:col.key)}
-                                    ref={el=>{ if(el) el._colKey=col.key; }}
-                                >
-                                <div className="th-label">
-                                    <span className="th-text" onClick={e=>{e.stopPropagation();handleSort(col.key);}}>{col.label}{sortIcon(col.key)}</span>
-                                    <span className="search-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg></span>
-                                </div>
-                                <span
-                                    className="col-resize-handle"
-                                    title="Drag to resize. Double-click to reset."
-                                    onMouseDown={e => {
-                                        const th = e.currentTarget.closest("th");
-                                        handleColResizeStart(e, col.key, th);
-                                    }}
-                                    onDoubleClick={e => { e.stopPropagation(); resetColWidth(col.key); }}
-                                />
-                                {activeCol===col.key&&<input className="col-search-input" placeholder={`Filter ${col.label}...`} value={colFilters[col.key]||""} onClick={e=>e.stopPropagation()} onChange={e=>handleColFilter(col.key,e.target.value)} autoFocus/>}
-                            </th>
+                                    <th key={col.key} className={activeCol===col.key?"active-col":""} style={cw?{width:cw,minWidth:cw,maxWidth:cw}:{}} onClick={()=>setActiveCol(p=>p===col.key?null:col.key)}>
+                                        <div className="th-label">
+                                            <span className="th-text" onClick={e=>{e.stopPropagation();handleSort(col.key);}}>{col.label}{sortIcon(col.key)}</span>
+                                            <span className="search-icon"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg></span>
+                                        </div>
+                                        <span className="col-resize-handle" title="Drag to resize. Double-click to reset."
+                                            onMouseDown={e=>{const th=e.currentTarget.closest("th");handleColResizeStart(e,col.key,th);}}
+                                            onDoubleClick={e=>{e.stopPropagation();resetColWidth(col.key);}}/>
+                                        {activeCol===col.key&&<input className="col-search-input" placeholder={`Filter ${col.label}...`} value={colFilters[col.key]||""} onClick={e=>e.stopPropagation()} onChange={e=>handleColFilter(col.key,e.target.value)} autoFocus/>}
+                                    </th>
                                 );
                             })}
                         </tr></thead>
@@ -2113,19 +2199,18 @@ function Search() {
                         </tbody>
                     </table>
                 </div>
-
                 <div className="bottom-scrollbar" ref={bottomScrollRef} onScroll={syncScroll}><div className="scroll-inner" style={{width:`calc(100% + ${extraWidth}px)`}}/></div>
 
                 {totalPages>=1&&<div className="pagination-bar">
-                    <div className="pagination-left"><span className="record-range">Showing <strong>{indexOfFirst+1}–{Math.min(indexOfFirst+currentRecords.length, serverTotal)}</strong> of <strong>{serverTotal.toLocaleString()}</strong> records</span></div>
+                    <div className="pagination-left"><span className="record-range">Showing <strong>{indexOfFirst+1}&ndash;{Math.min(indexOfFirst+currentRecords.length,serverTotal)}</strong> of <strong>{serverTotal.toLocaleString()}</strong> records</span></div>
                     <div className="pagination-center">
-                        <button className="pg-btn pg-edge" onClick={()=>handlePageClick(1)} disabled={currentPage===1}>««</button>
-                        <button className="pg-btn" onClick={()=>handlePageClick(Math.max(1,currentPage-1))} disabled={currentPage===1}>‹ Prev</button>
+                        <button className="pg-btn pg-edge" onClick={()=>handlePageClick(1)} disabled={currentPage===1}>&#xAB;&#xAB;</button>
+                        <button className="pg-btn" onClick={()=>handlePageClick(Math.max(1,currentPage-1))} disabled={currentPage===1}>&#x2039; Prev</button>
                         {startPage>1&&<span className="pg-ellipsis">…</span>}
                         {[...Array(pagesPerGroup)].map((_,i)=>{ const p=startPage+i; if(p>totalPages)return null; return <button key={p} className={`pg-btn pg-num${currentPage===p?" pg-active":""}`} onClick={()=>handlePageClick(p)}>{p}</button>; })}
                         {startPage+pagesPerGroup-1<totalPages&&<span className="pg-ellipsis">…</span>}
-                        <button className="pg-btn" onClick={()=>handlePageClick(Math.min(totalPages,currentPage+1))} disabled={currentPage===totalPages}>Next ›</button>
-                        <button className="pg-btn pg-edge" onClick={()=>handlePageClick(totalPages)} disabled={currentPage===totalPages}>»»</button>
+                        <button className="pg-btn" onClick={()=>handlePageClick(Math.min(totalPages,currentPage+1))} disabled={currentPage===totalPages}>Next &#x203A;</button>
+                        <button className="pg-btn pg-edge" onClick={()=>handlePageClick(totalPages)} disabled={currentPage===totalPages}>&#xBB;&#xBB;</button>
                     </div>
                     <div className="pagination-right">
                         <label className="pg-label">Go to</label>
@@ -2143,20 +2228,11 @@ function Search() {
             {openModals.length > 0 && (
                 <div className="fm-layer">
                     {openModals.map(modal => (
-                        <FloatingModal
-                            key={modal.id}
-                            modal={modal}
-                            processed={processed}
-                            onClose={closeModal}
-                            onBringToFront={bringToFront}
-                            onPatch={patchModal}
-                            onPrev={goModalPrev}
-                            onNext={goModalNext}
-                            getDisplayFormat={getDisplayFormat}
-                            getDisplayType={getDisplayType}
-                            statusCls={statusCls}
-                            dirClass={dirClass}
-                            formatDirection={formatDirection}
+                        <FloatingModal key={modal.id} modal={modal} processed={processed}
+                            onClose={closeModal} onBringToFront={bringToFront} onPatch={patchModal}
+                            onPrev={goModalPrev} onNext={goModalNext}
+                            getDisplayFormat={getDisplayFormat} getDisplayType={getDisplayType}
+                            statusCls={statusCls} dirClass={dirClass} formatDirection={formatDirection}
                         />
                     ))}
                     {openModals.length > 1 && (

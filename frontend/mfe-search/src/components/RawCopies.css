@@ -3,6 +3,26 @@
    Collection: amp_raw_copies
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Raw XML viewer colour token ─────────────────────────────────────────────
+   Change --rc-raw-bg in your theme or .env-driven CSS injection to restyle
+   the expanded raw content panel without touching any other rule.           */
+:root {
+    --rc-raw-bg:          #0f172a;   /* dark navy  — expanded raw XML panel  */
+    --rc-raw-bg-hover:    #0f172a;   /* same: hover must NOT lighten the panel */
+    --rc-raw-text:        #e2e8f0;   /* light slate text                      */
+    --rc-raw-meta:        #64748b;   /* muted slate for ID / date meta line   */
+    --rc-raw-border:      #1e293b;   /* subtle border inside dark panel       */
+    --rc-raw-scrollbar-track: #1e293b;
+    --rc-raw-scrollbar-thumb: #475569;
+    --rc-raw-copy-btn-bg:      #1e293b;
+    --rc-raw-copy-btn-text:    #94a3b8;
+    --rc-raw-copy-btn-border:  #334155;
+    --rc-raw-copy-btn-hover-bg:#334155;
+    --rc-raw-copy-btn-hover-text:#e2e8f0;
+    --rc-status-default-bg:    #f1f5f9;
+    --rc-status-default-text:  #475569;
+}
+
 /* ── Search panel ──────────────────────────────────────────────────────── */
 .rc-panel {
     background: var(--surface, var(--white));
@@ -189,6 +209,10 @@
 }
 
 .rc-table tbody tr:hover { background: var(--gray-7); }
+/* Raw XML expanded row must NEVER change colour on hover */
+.rc-table tbody tr.rc-raw-row:hover,
+.rc-table tbody tr.rc-raw-row:focus,
+.rc-table tbody tr.rc-raw-row { background: transparent !important; }
 .rc-table tbody tr:last-child { border-bottom: none; }
 
 .rc-table td {
@@ -262,9 +286,26 @@
 }
 
 /* ── Expanded raw XML row ───────────────────────────────────────────────── */
+/* The <tr> itself must be dark — overrides the even/odd alternating rule */
+.rc-raw-row,
+.rc-raw-row:hover,
+.rc-raw-row:focus,
+.rc-raw-row:nth-child(even),
+.rc-raw-row:nth-child(odd) {
+    background: var(--rc-raw-bg) !important;
+    background-color: var(--rc-raw-bg) !important;
+}
+
 .rc-raw-row td {
     padding: 0;
-    background: #0f172a;
+    background: var(--rc-raw-bg) !important;
+    background-color: var(--rc-raw-bg) !important;
+}
+
+.rc-raw-row td:hover,
+.rc-raw-row:hover td {
+    background: var(--rc-raw-bg) !important;
+    background-color: var(--rc-raw-bg) !important;
 }
 
 .rc-raw-inner {
@@ -279,7 +320,7 @@
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--rc-raw-meta);
     margin-bottom: 6px;
 }
 
@@ -287,7 +328,7 @@
     font-family: 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
     font-size: 11.5px;
     line-height: 1.7;
-    color: #e2e8f0;
+    color: var(--rc-raw-text);
     white-space: pre-wrap;
     word-break: break-all;
     max-height: 320px;
@@ -298,8 +339,8 @@
 }
 
 .rc-raw-xml::-webkit-scrollbar       { width: 5px; }
-.rc-raw-xml::-webkit-scrollbar-track { background: #1e293b; }
-.rc-raw-xml::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+.rc-raw-xml::-webkit-scrollbar-track { background: var(--rc-raw-scrollbar-track); }
+.rc-raw-xml::-webkit-scrollbar-thumb { background: var(--rc-raw-scrollbar-thumb); border-radius: 3px; }
 
 /* ── Status & direction badges ──────────────────────────────────────────── */
 .rc-status {
@@ -314,7 +355,7 @@
 .rc-status-ok       { background: #dcfce7; color: #166534; }
 .rc-status-pending  { background: #fef9c3; color: #854d0e; }
 .rc-status-fail     { background: #fee2e2; color: #991b1b; }
-.rc-status-default  { background: #f1f5f9; color: #475569; }
+.rc-status-default  { background: var(--rc-status-default-bg); color: var(--rc-status-default-text); }
 
 .rc-dir {
     display: inline-block;
@@ -405,9 +446,9 @@
 
 /* ── Copy raw XML button ────────────────────────────────────────────────── */
 .rc-copy-btn {
-    background: #1e293b;
-    color: #94a3b8;
-    border: 1px solid #334155;
+    background: var(--rc-raw-copy-btn-bg);
+    color: var(--rc-raw-copy-btn-text);
+    border: 1px solid var(--rc-raw-copy-btn-border);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 11px;
@@ -419,8 +460,8 @@
 }
 
 .rc-copy-btn:hover {
-    background: #334155;
-    color: #e2e8f0;
+    background: var(--rc-raw-copy-btn-hover-bg);
+    color: var(--rc-raw-copy-btn-hover-text);
 }
 
 .rc-copy-btn.copied {

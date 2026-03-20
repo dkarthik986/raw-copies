@@ -116,7 +116,7 @@ public class RawCopyService {
 
         query.skip((long) page * size)
                 .limit(size)
-                .with(Sort.by(Sort.Direction.DESC, "receivedAt"));
+                .with(Sort.by(Sort.Direction.DESC, "receivedAt").and(Sort.by(Sort.Direction.DESC, "_id")));
 
         List<Document> docs = mongoTemplate.find(query, Document.class, col);
         List<RawCopyDTO> rows = docs.stream().map(this::toDTO).collect(Collectors.toList());
@@ -152,31 +152,65 @@ public class RawCopyService {
     // ── Helpers ────────────────────────────────────────────────────────────
     private RawCopyDTO toDTO(Document doc) {
         RawCopyDTO d = new RawCopyDTO();
-        Object oid = doc.get("_id");
-        d.setId(oid != null ? oid.toString() : null);
-        d.setMessageReference(doc.getString("messageReference"));
-        d.setMessageId(doc.getString("messageId"));
-        d.setRawInput(doc.getString("rawInput"));
-        d.setInputType(doc.getString("inputType"));
-        d.setSource(doc.getString("source"));
-        Object dup = doc.get("isDuplicate");
-        if (dup instanceof Boolean b) d.setIsDuplicate(b);
-        d.setCurrentStatus(doc.getString("currentStatus"));
-        d.setSenderAddress(doc.getString("senderAddress"));
-        d.setReceiverAddress(doc.getString("receiverAddress"));
-        d.setMessageTypeCode(doc.getString("messageTypeCode"));
-        d.setProtocol(doc.getString("protocol"));
-        d.setDirection(doc.getString("direction"));
-        d.setAmpDateReceived(doc.getString("ampDateReceived"));
-        d.setReceivedAt(doc.getString("receivedAt"));
+        try {
+            Object oid = doc.get("_id");
+            d.setId(oid != null ? oid.toString() : null);
+            d.setMessageReference(str(doc, "messageReference"));
+            d.setMessageId(str(doc, "messageId"));
+            d.setRawInput(str(doc, "rawInput"));
+            d.setInputType(str(doc, "inputType"));
+            d.setSource(str(doc, "source"));
+            // isDuplicate may be Boolean, String "true"/"false", or absent
+            Object dup = doc.get("isDuplicate");
+            if (dup instanceof Boolean b)        d.setIsDuplicate(b);
+            else if (dup instanceof String s)    d.setIsDuplicate(Boolean.parseBoolean(s));
+            else if (dup != null)                d.setIsDuplicate(Boolean.parseBoolean(dup.toString()));
+            d.setCurrentStatus(str(doc, "currentStatus"));
+            d.setSenderAddress(str(doc, "senderAddress"));
+            d.setReceiverAddress(str(doc, "receiverAddress"));
+            d.setMessageTypeCode(str(doc, "messageTypeCode"));
+            d.setProtocol(str(doc, "protocol"));
+            d.setDirection(str(doc, "direction"));
+            // dates may be stored as Date objects or Strings
+            d.setAmpDateReceived(dateStr(doc, "ampDateReceived"));
+            d.setReceivedAt(dateStr(doc, "receivedAt"));
+        } catch (Exception e) {
+            // Return partial DTO rather than crashing the whole response
+        }
         return d;
+    }
+
+    /** Safely get a String field — handles String, ObjectId, and other types */
+    private String str(Document doc, String key) {
+        Object v = doc.get(key);
+        if (v == null) return null;
+        if (v instanceof String s) return s.isBlank() ? null : s;
+        return v.toString();
+    }
+
+    /** Safely get a date field that may be stored as Date object or ISO String */
+    private String dateStr(Document doc, String key) {
+        Object v = doc.get(key);
+        if (v == null) return null;
+        if (v instanceof String s) return s.isBlank() ? null : s;
+        if (v instanceof java.util.Date dt) return dt.toInstant().toString();
+        return v.toString();
     }
 
     private List<String> distinct(String field, String col) {
         try {
-            return mongoTemplate.findDistinct(new Query(), field, col, String.class)
-                    .stream().filter(v -> v != null && !v.isBlank()).sorted().collect(Collectors.toList());
-        } catch (Exception e) { return Collections.emptyList(); }
+            // Use Object.class to handle mixed-type fields, then stringify
+            return mongoTemplate.findDistinct(new Query(), field, col, Object.class)
+                    .stream()
+                    .filter(v -> v != null)
+                    .map(Object::toString)
+                    .filter(s -> !s.isBlank())
+                    .distinct()
+                    .sorted()
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
     }
 
     private boolean notBlank(String v) { return v != null && !v.isBlank(); }
